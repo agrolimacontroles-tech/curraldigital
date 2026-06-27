@@ -132,7 +132,7 @@ async function carregarFazendas() {
   }
 
   // contagem de animais ativos por fazenda
-  const { data: animais } = await supabase.from('animais').select('fazenda_id, status');
+  const { data: animais } = await supabaseClient.from('animais').select('fazenda_id, status');
   const contagem = {};
   (animais || []).forEach(a => {
     if (a.status === 'ativo') contagem[a.fazenda_id] = (contagem[a.fazenda_id] || 0) + 1;
@@ -155,7 +155,7 @@ async function carregarFazendas() {
 }
 
 async function editarFazenda(id) {
-  const { data: f, error } = await supabase.from('fazendas').select('*').eq('id', id).single();
+  const { data: f, error } = await supabaseClient.from('fazendas').select('*').eq('id', id).single();
   if (error) { alert('Erro ao carregar fazenda: ' + error.message); return; }
 
   fazendaEditandoId = id;
@@ -173,7 +173,7 @@ async function editarFazenda(id) {
 async function excluirFazenda(id, nome) {
   if (!confirm(`Excluir a fazenda "${nome}"? Essa ação não pode ser desfeita.`)) return;
 
-  const { error } = await supabase.from('fazendas').delete().eq('id', id);
+  const { error } = await supabaseClient.from('fazendas').delete().eq('id', id);
   if (error) {
     alert('Não foi possível excluir: ' + error.message + '\n\nVerifique se ainda existem animais, lotes ou mangas vinculados a essa fazenda.');
     return;
@@ -200,9 +200,9 @@ async function salvarFazenda() {
 
   let error;
   if (fazendaEditandoId) {
-    ({ error } = await supabase.from('fazendas').update(payload).eq('id', fazendaEditandoId));
+    ({ error } = await supabaseClient.from('fazendas').update(payload).eq('id', fazendaEditandoId));
   } else {
-    ({ error } = await supabase.from('fazendas').insert(payload));
+    ({ error } = await supabaseClient.from('fazendas').insert(payload));
   }
 
   btn.disabled = false;

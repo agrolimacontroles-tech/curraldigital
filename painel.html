@@ -51,8 +51,8 @@ async function carregarPainel() {
   showUserEmail();
 
   // Métricas principais
-  const { data: animais } = await supabase.from('vw_animais_resumo').select('*');
-  const { data: fazendas } = await supabase.from('fazendas').select('id');
+  const { data: animais } = await supabaseClient.from('vw_animais_resumo').select('*');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id');
 
   const ativos = (animais || []).filter(a => a.status === 'ativo');
   const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
@@ -87,7 +87,7 @@ async function carregarPainel() {
   const maxFazenda = Math.max(1, ...Object.values(porFazenda));
 
   // Ocupação das mangas
-  const { data: mangas } = await supabase.from('vw_mangas_ocupacao').select('*');
+  const { data: mangas } = await supabaseClient.from('vw_mangas_ocupacao').select('*');
 
   document.getElementById('graficos').innerHTML = `
     <div class="card">

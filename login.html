@@ -52,7 +52,7 @@ async function fazerLogin() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Entrando...';
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
 
   if (error) {
     showMsg('E-mail ou senha incorretos.', 'error');
@@ -68,7 +68,7 @@ document.getElementById('btnLogin').addEventListener('click', fazerLogin);
 document.getElementById('senha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
 // Se já estiver logado, vai direto para o painel
-supabase.auth.getSession().then(({ data: { session } }) => {
+supabaseClient.auth.getSession().then(({ data: { session } }) => {
   if (session) window.location.href = 'painel.html';
 });
 </script>

@@ -44,7 +44,7 @@ function toggleSidebar() {
 }
 
 async function showUserEmail() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabaseClient.auth.getSession();
   if (session) {
     document.getElementById('userEmail').textContent = session.user.email;
   }
