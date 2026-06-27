@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Login</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo"><i class="ti ti-cow"></i> CurralDigital</div>
+
+    <div id="msg" class="msg"></div>
+
+    <div class="fgroup full" style="margin-bottom:12px">
+      <label>E-mail</label>
+      <input type="email" id="email" placeholder="seu@email.com">
+    </div>
+    <div class="fgroup full" style="margin-bottom:18px">
+      <label>Senha</label>
+      <input type="password" id="senha" placeholder="••••••••">
+    </div>
+
+    <button class="btn btn-primary" id="btnLogin" style="width:100%;justify-content:center">
+      Entrar
+    </button>
+  </div>
+</div>
+
+<script src="assets/supabase-config.js"></script>
+<script>
+function showMsg(text, type) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+}
+
+async function fazerLogin() {
+  const email = document.getElementById('email').value.trim();
+  const senha = document.getElementById('senha').value;
+  const btn = document.getElementById('btnLogin');
+
+  if (!email || !senha) {
+    showMsg('Preencha e-mail e senha.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Entrando...';
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+
+  if (error) {
+    showMsg('E-mail ou senha incorretos.', 'error');
+    btn.disabled = false;
+    btn.innerHTML = 'Entrar';
+    return;
+  }
+
+  window.location.href = 'painel.html';
+}
+
+document.getElementById('btnLogin').addEventListener('click', fazerLogin);
+document.getElementById('senha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
+
+// Se já estiver logado, vai direto para o painel
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session) window.location.href = 'painel.html';
+});
+</script>
+
+</body>
+</html>

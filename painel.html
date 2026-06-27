@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Painel</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="assets/supabase-config.js"></script>
+<script src="assets/layout.js"></script>
+<script>
+renderTopbarSidebar('painel');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Painel</div>
+      <div class="pagesub" id="dataAtual"></div>
+    </div>
+  </div>
+
+  <div class="metrics" id="metricas">
+    <div class="metric"><span class="spinner"></span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-clock"></i> Animais ativos — entradas mais recentes</div>
+    <div class="cardb table-wrap">
+      <table>
+        <thead>
+          <tr><th>Brinco</th><th>Fazenda</th><th>Lote</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th></tr>
+        </thead>
+        <tbody id="tabelaRecentes">
+          <tr class="empty-row"><td colspan="6"><span class="spinner"></span> Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+`;
+
+document.getElementById('dataAtual').textContent = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+async function carregarPainel() {
+  await checkAuth();
+  showUserEmail();
+
+  // Métricas principais
+  const { data: animais } = await supabase.from('vw_animais_resumo').select('*');
+  const { data: fazendas } = await supabase.from('fazendas').select('id');
+
+  const ativos = (animais || []).filter(a => a.status === 'ativo');
+  const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
+  const gmdValidos = ativos.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const gmdMedio = gmdValidos.length ? (gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length) : 0;
+
+  document.getElementById('metricas').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-tag"></i></div>
+      <div><div class="mlabel">Animais ativos</div><div class="mval">${ativos.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-success"><i class="ti ti-weight"></i></div>
+      <div><div class="mlabel">Peso total</div><div class="mval">${pesoTotal.toLocaleString('pt-BR')} kg</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+      <div><div class="mlabel">GMD médio</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
+      <div><div class="mlabel">Fazendas</div><div class="mval">${(fazendas || []).length}</div></div>
+    </div>
+  `;
+
+  // Animais por fazenda
+  const porFazenda = {};
+  ativos.forEach(a => {
+    const nome = a.fazenda_nome || 'Sem fazenda';
+    porFazenda[nome] = (porFazenda[nome] || 0) + 1;
+  });
+  const maxFazenda = Math.max(1, ...Object.values(porFazenda));
+
+  // Ocupação das mangas
+  const { data: mangas } = await supabase.from('vw_mangas_ocupacao').select('*');
+
+  document.getElementById('graficos').innerHTML = `
+    <div class="card">
+      <div class="cardh">Animais por fazenda</div>
+      <div class="cardb">
+        ${Object.entries(porFazenda).length === 0
+          ? '<p style="color:#3d6080;font-size:13px">Nenhum animal cadastrado ainda.</p>'
+          : Object.entries(porFazenda).map(([nome, qtd]) => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;color:#7aa3cc;min-width:90px">${nome}</span>
+              <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
+                <div style="height:100%;border-radius:3px;width:${qtd / maxFazenda * 100}%;background:#1a4a8a"></div>
+              </div>
+              <span style="font-size:12px;color:#e2eaf4;min-width:24px;text-align:right">${qtd}</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardh">Ocupação das mangas</div>
+      <div class="cardb">
+        ${(mangas || []).length === 0
+          ? '<p style="color:#3d6080;font-size:13px">Nenhuma manga cadastrada ainda.</p>'
+          : mangas.map(m => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;color:#7aa3cc;min-width:90px">Manga ${m.numero}</span>
+              <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
+                <div style="height:100%;border-radius:3px;width:${m.percentual_ocupacao || 0}%;background:#f0b840"></div>
+              </div>
+              <span style="font-size:12px;color:#e2eaf4;min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+  `;
+
+  // Tabela de animais ativos recentes
+  const recentes = ativos
+    .sort((a, b) => new Date(b.data_entrada) - new Date(a.data_entrada))
+    .slice(0, 8);
+
+  document.getElementById('tabelaRecentes').innerHTML = recentes.length === 0
+    ? '<tr class="empty-row"><td colspan="6">Nenhum animal cadastrado ainda. <a href="animais.html">Cadastrar o primeiro animal →</a></td></tr>'
+    : recentes.map(a => `
+      <tr>
+        <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+        <td>${a.fazenda_nome || '—'}</td>
+        <td>${a.lote_nome || '—'}</td>
+        <td>${Number(a.peso_atual).toLocaleString('pt-BR')} kg</td>
+        <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) : '—'}</td>
+        <td>${a.dias_no_ciclo || 0} dias</td>
+      </tr>
+    `).join('');
+}
+
+carregarPainel();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Fazendas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="assets/supabase-config.js"></script>
+<script src="assets/layout.js"></script>
+<script>
+renderTopbarSidebar('fazendas');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Fazendas</div>
+      <div class="pagesub" id="totalFazendas">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de fazendas</button>
+    <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar fazenda</button>
+  </div>
+
+  <div id="abaLista">
+    <div class="card">
+      <div class="cardb table-wrap">
+        <table>
+          <thead>
+            <tr><th>Fazenda</th><th>Proprietário</th><th>Município/UF</th><th>Atividade</th><th>Capacidade</th><th>Animais</th><th></th></tr>
+          </thead>
+          <tbody id="tabelaFazendas">
+            <tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaCadastro" style="display:none">
+    <div id="msgCadastro" class="msg"></div>
+    <div class="card">
+      <div class="cardh">Identificação</div>
+      <div class="cardb">
+        <div class="frow">
+          <div class="fgroup"><label>Nome da fazenda *</label><input id="f_nome" placeholder="Fazenda São João"></div>
+          <div class="fgroup"><label>Proprietário</label><input id="f_proprietario" placeholder="Nome do proprietário"></div>
+          <div class="fgroup">
+            <label>Atividade exercida</label>
+            <select id="f_atividade">
+              <option value="">Selecione...</option>
+              <option>Engorda</option>
+              <option>Cria</option>
+              <option>Recria</option>
+              <option>Cria e recria</option>
+              <option>Confinamento</option>
+              <option>Misto</option>
+            </select>
+          </div>
+          <div class="fgroup"><label>Capacidade (animais)</label><input id="f_capacidade" type="number" placeholder="150"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardh">Endereço</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Município</label><input id="f_municipio" placeholder="Alfenas"></div>
+          <div class="fgroup"><label>Estado</label><input id="f_estado" placeholder="MG" maxlength="2"></div>
+          <div class="fgroup"><label>&nbsp;</label></div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Endereço / referência</label><input id="f_endereco" placeholder="Estrada rural, km 12"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnSalvarFazenda">Cadastrar fazenda</button>
+          <button class="btn btn-secondary" onclick="limparFormulario()">Limpar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+let fazendaEditandoId = null;
+
+function mostrarAba(aba) {
+  document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
+  document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
+  document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  if (aba === 'lista') carregarFazendas();
+}
+
+function limparFormulario() {
+  fazendaEditandoId = null;
+  ['f_nome','f_proprietario','f_atividade','f_capacidade','f_municipio','f_estado','f_endereco'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('btnSalvarFazenda').textContent = 'Cadastrar fazenda';
+  document.getElementById('msgCadastro').className = 'msg';
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msgCadastro');
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function carregarFazendas() {
+  const { data: fazendas, error } = await supabase
+    .from('fazendas')
+    .select('*')
+    .order('nome');
+
+  if (error) {
+    document.getElementById('tabelaFazendas').innerHTML = `<tr class="empty-row"><td colspan="7">Erro ao carregar: ${error.message}</td></tr>`;
+    return;
+  }
+
+  document.getElementById('totalFazendas').textContent = `${fazendas.length} fazenda${fazendas.length === 1 ? '' : 's'} cadastrada${fazendas.length === 1 ? '' : 's'}`;
+
+  if (fazendas.length === 0) {
+    document.getElementById('tabelaFazendas').innerHTML = '<tr class="empty-row"><td colspan="7">Nenhuma fazenda cadastrada ainda.</td></tr>';
+    return;
+  }
+
+  // contagem de animais ativos por fazenda
+  const { data: animais } = await supabase.from('animais').select('fazenda_id, status');
+  const contagem = {};
+  (animais || []).forEach(a => {
+    if (a.status === 'ativo') contagem[a.fazenda_id] = (contagem[a.fazenda_id] || 0) + 1;
+  });
+
+  document.getElementById('tabelaFazendas').innerHTML = fazendas.map(f => `
+    <tr>
+      <td><b style="color:#e2eaf4">${f.nome}</b></td>
+      <td>${f.proprietario || '—'}</td>
+      <td>${f.municipio ? f.municipio + (f.estado ? '/' + f.estado : '') : '—'}</td>
+      <td>${f.atividade ? `<span class="badge bg-info">${f.atividade}</span>` : '—'}</td>
+      <td>${f.capacidade || '—'}</td>
+      <td>${contagem[f.id] || 0}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary" style="padding:4px 10px" onclick="editarFazenda('${f.id}')"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirFazenda('${f.id}','${f.nome.replace(/'/g, "\\'")}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function editarFazenda(id) {
+  const { data: f, error } = await supabase.from('fazendas').select('*').eq('id', id).single();
+  if (error) { alert('Erro ao carregar fazenda: ' + error.message); return; }
+
+  fazendaEditandoId = id;
+  document.getElementById('f_nome').value = f.nome || '';
+  document.getElementById('f_proprietario').value = f.proprietario || '';
+  document.getElementById('f_atividade').value = f.atividade || '';
+  document.getElementById('f_capacidade').value = f.capacidade || '';
+  document.getElementById('f_municipio').value = f.municipio || '';
+  document.getElementById('f_estado').value = f.estado || '';
+  document.getElementById('f_endereco').value = f.endereco || '';
+  document.getElementById('btnSalvarFazenda').textContent = 'Salvar alterações';
+  mostrarAba('cadastro');
+}
+
+async function excluirFazenda(id, nome) {
+  if (!confirm(`Excluir a fazenda "${nome}"? Essa ação não pode ser desfeita.`)) return;
+
+  const { error } = await supabase.from('fazendas').delete().eq('id', id);
+  if (error) {
+    alert('Não foi possível excluir: ' + error.message + '\n\nVerifique se ainda existem animais, lotes ou mangas vinculados a essa fazenda.');
+    return;
+  }
+  carregarFazendas();
+}
+
+async function salvarFazenda() {
+  const nome = document.getElementById('f_nome').value.trim();
+  if (!nome) { showMsg('O nome da fazenda é obrigatório.', 'error'); return; }
+
+  const payload = {
+    nome,
+    proprietario: document.getElementById('f_proprietario').value.trim() || null,
+    atividade: document.getElementById('f_atividade').value || null,
+    capacidade: document.getElementById('f_capacidade').value ? Number(document.getElementById('f_capacidade').value) : null,
+    municipio: document.getElementById('f_municipio').value.trim() || null,
+    estado: document.getElementById('f_estado').value.trim().toUpperCase() || null,
+    endereco: document.getElementById('f_endereco').value.trim() || null,
+  };
+
+  const btn = document.getElementById('btnSalvarFazenda');
+  btn.disabled = true;
+
+  let error;
+  if (fazendaEditandoId) {
+    ({ error } = await supabase.from('fazendas').update(payload).eq('id', fazendaEditandoId));
+  } else {
+    ({ error } = await supabase.from('fazendas').insert(payload));
+  }
+
+  btn.disabled = false;
+
+  if (error) {
+    showMsg('Erro ao salvar: ' + error.message, 'error');
+    return;
+  }
+
+  showMsg(fazendaEditandoId ? 'Fazenda atualizada com sucesso!' : 'Fazenda cadastrada com sucesso!', 'success');
+  limparFormulario();
+  mostrarAba('lista');
+}
+
+document.getElementById('btnSalvarFazenda').addEventListener('click', salvarFazenda);
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  carregarFazendas();
+})();
+</script>
+
+</body>
+</html>
