@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Mangas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('mangas');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Mangas</div>
+      <div class="pagesub" id="totalMangas">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de mangas</button>
+    <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar manga</button>
+  </div>
+
+  <div id="abaLista">
+    <div class="card">
+      <div class="cardb table-wrap">
+        <table>
+          <thead>
+            <tr><th>Manga</th><th>Fazenda</th><th>Tipo de estrutura</th><th>Capacidade</th><th>Ocupação atual</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="tabelaMangas">
+            <tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaCadastro" style="display:none">
+    <div id="msgCadastro" class="msg"></div>
+    <div class="card">
+      <div class="cardh">Identificação</div>
+      <div class="cardb">
+        <div class="frow">
+          <div class="fgroup"><label>Número da manga *</label><input id="m_numero" placeholder="01"></div>
+          <div class="fgroup">
+            <label>Fazenda *</label>
+            <select id="m_fazenda_id"><option value="">Carregando fazendas...</option></select>
+          </div>
+          <div class="fgroup"><label>Capacidade (animais) *</label><input id="m_capacidade" type="number" placeholder="50"></div>
+          <div class="fgroup">
+            <label>Tipo de estrutura</label>
+            <select id="m_tipo_estrutura">
+              <option value="">Selecione...</option>
+              <option>Curral</option>
+              <option>Piquete</option>
+              <option>Galpão</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnSalvarManga">Cadastrar manga</button>
+          <button class="btn btn-secondary" onclick="limparFormulario()">Limpar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+let mangaEditandoId = null;
+
+function mostrarAba(aba) {
+  document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
+  document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
+  document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  if (aba === 'lista') carregarMangas();
+  if (aba === 'cadastro') carregarFazendasNoSelect();
+}
+
+function limparFormulario() {
+  mangaEditandoId = null;
+  document.getElementById('m_numero').value = '';
+  document.getElementById('m_fazenda_id').value = '';
+  document.getElementById('m_capacidade').value = '';
+  document.getElementById('m_tipo_estrutura').value = '';
+  document.getElementById('btnSalvarManga').textContent = 'Cadastrar manga';
+  document.getElementById('msgCadastro').className = 'msg';
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msgCadastro');
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function carregarFazendasNoSelect() {
+  const sel = document.getElementById('m_fazenda_id');
+  const valorAtual = sel.value;
+
+  const { data: fazendas, error } = await supabaseClient
+    .from('fazendas')
+    .select('id, nome')
+    .order('nome');
+
+  if (error) {
+    sel.innerHTML = `<option value="">Erro ao carregar fazendas</option>`;
+    return;
+  }
+
+  if (!fazendas || fazendas.length === 0) {
+    sel.innerHTML = `<option value="">Nenhuma fazenda cadastrada — cadastre uma primeiro</option>`;
+    return;
+  }
+
+  sel.innerHTML = `<option value="">Selecione...</option>` +
+    fazendas.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  if (valorAtual) sel.value = valorAtual;
+}
+
+async function carregarMangas() {
+  const { data: mangas, error } = await supabaseClient
+    .from('vw_mangas_ocupacao')
+    .select('*')
+    .order('numero');
+
+  if (error) {
+    document.getElementById('tabelaMangas').innerHTML = `<tr class="empty-row"><td colspan="7">Erro ao carregar: ${error.message}</td></tr>`;
+    return;
+  }
+
+  document.getElementById('totalMangas').textContent = `${mangas.length} manga${mangas.length === 1 ? '' : 's'} cadastrada${mangas.length === 1 ? '' : 's'}`;
+
+  if (mangas.length === 0) {
+    document.getElementById('tabelaMangas').innerHTML = '<tr class="empty-row"><td colspan="7">Nenhuma manga cadastrada ainda.</td></tr>';
+    return;
+  }
+
+  // busca tipo_estrutura (não vem na view) direto da tabela mangas
+  const { data: mangasDetalhe } = await supabaseClient.from('mangas').select('id, tipo_estrutura');
+  const tipoMap = {};
+  (mangasDetalhe || []).forEach(m => { tipoMap[m.id] = m.tipo_estrutura; });
+
+  document.getElementById('tabelaMangas').innerHTML = mangas.map(m => {
+    const pct = m.percentual_ocupacao || 0;
+    let statusBadge = '<span class="badge bg-success">Disponível</span>';
+    if (pct >= 90) statusBadge = '<span class="badge bg-danger">Cheia</span>';
+    else if (pct >= 70) statusBadge = '<span class="badge bg-warning">Quase cheia</span>';
+
+    return `
+      <tr>
+        <td><b style="color:#e2eaf4">Manga ${m.numero}</b></td>
+        <td>${m.fazenda_nome || '—'}</td>
+        <td>${tipoMap[m.id] || '—'}</td>
+        <td>${m.capacidade}</td>
+        <td>${m.ocupacao_atual || 0} (${pct}%)</td>
+        <td>${statusBadge}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary" style="padding:4px 10px" onclick="editarManga('${m.id}')"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirManga('${m.id}','Manga ${m.numero}')"><i class="ti ti-trash"></i></button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function editarManga(id) {
+  const { data: m, error } = await supabaseClient.from('mangas').select('*').eq('id', id).single();
+  if (error) { alert('Erro ao carregar manga: ' + error.message); return; }
+
+  mangaEditandoId = id;
+  mostrarAba('cadastro');
+
+  // espera o select de fazendas carregar antes de definir o valor
+  await carregarFazendasNoSelect();
+
+  document.getElementById('m_numero').value = m.numero || '';
+  document.getElementById('m_fazenda_id').value = m.fazenda_id || '';
+  document.getElementById('m_capacidade').value = m.capacidade || '';
+  document.getElementById('m_tipo_estrutura').value = m.tipo_estrutura || '';
+  document.getElementById('btnSalvarManga').textContent = 'Salvar alterações';
+}
+
+async function excluirManga(id, nome) {
+  if (!confirm(`Excluir a "${nome}"? Essa ação não pode ser desfeita.`)) return;
+
+  const { error } = await supabaseClient.from('mangas').delete().eq('id', id);
+  if (error) {
+    alert('Não foi possível excluir: ' + error.message + '\n\nVerifique se ainda existem animais nessa manga.');
+    return;
+  }
+  carregarMangas();
+}
+
+async function salvarManga() {
+  const numero = document.getElementById('m_numero').value.trim();
+  const fazendaId = document.getElementById('m_fazenda_id').value;
+  const capacidade = document.getElementById('m_capacidade').value;
+
+  if (!numero) { showMsg('O número da manga é obrigatório.', 'error'); return; }
+  if (!fazendaId) { showMsg('Selecione a fazenda.', 'error'); return; }
+  if (!capacidade) { showMsg('A capacidade é obrigatória.', 'error'); return; }
+
+  const payload = {
+    numero,
+    fazenda_id: fazendaId,
+    capacidade: Number(capacidade),
+    tipo_estrutura: document.getElementById('m_tipo_estrutura').value || null,
+  };
+
+  const btn = document.getElementById('btnSalvarManga');
+  btn.disabled = true;
+
+  let error;
+  if (mangaEditandoId) {
+    ({ error } = await supabaseClient.from('mangas').update(payload).eq('id', mangaEditandoId));
+  } else {
+    ({ error } = await supabaseClient.from('mangas').insert(payload));
+  }
+
+  btn.disabled = false;
+
+  if (error) {
+    const msg = error.code === '23505'
+      ? 'Já existe uma manga com esse número nessa fazenda.'
+      : 'Erro ao salvar: ' + error.message;
+    showMsg(msg, 'error');
+    return;
+  }
+
+  showMsg(mangaEditandoId ? 'Manga atualizada com sucesso!' : 'Manga cadastrada com sucesso!', 'success');
+  limparFormulario();
+  mostrarAba('lista');
+}
+
+document.getElementById('btnSalvarManga').addEventListener('click', salvarManga);
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  carregarMangas();
+})();
+</script>
+
+</body>
+</html>
