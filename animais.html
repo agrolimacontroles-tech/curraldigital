@@ -203,6 +203,12 @@ document.getElementById('mainContent').innerHTML = `
         <div class="frow cols-1">
           <div class="fgroup"><label>Comprador</label><input id="v_comprador" placeholder="Nome do comprador"></div>
         </div>
+        <div class="frow cols-1">
+          <div class="fgroup">
+            <label>Venda em lote (opcional)</label>
+            <select id="v_venda_id"><option value="">Sem vínculo / venda individual</option></select>
+          </div>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn btn-primary" id="btnSalvarVenda" onclick="salvarVenda()">Confirmar venda</button>
@@ -604,6 +610,24 @@ function abrirModalVenda(animalId, brinco) {
   document.getElementById('v_comprador').value = '';
   document.getElementById('msgVenda').className = 'msg';
   document.getElementById('modalVenda').style.display = 'flex';
+  carregarVendasNoSelect();
+}
+
+async function carregarVendasNoSelect() {
+  const sel = document.getElementById('v_venda_id');
+  sel.innerHTML = `<option value="">Carregando...</option>`;
+
+  const { data: vendas } = await supabaseClient
+    .from('vendas')
+    .select('id, data_venda, comprador, nota_fiscal')
+    .order('data_venda', { ascending: false });
+
+  sel.innerHTML = `<option value="">Sem vínculo / venda individual</option>` +
+    (vendas || []).map(v => {
+      const data = new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR');
+      const label = [data, v.comprador, v.nota_fiscal ? 'NF ' + v.nota_fiscal : null].filter(Boolean).join(' — ');
+      return `<option value="${v.id}">${label}</option>`;
+    }).join('');
 }
 
 async function salvarVenda() {
@@ -622,6 +646,7 @@ async function salvarVenda() {
     peso_saida: Number(pesoSaida),
     preco_venda: document.getElementById('v_preco_venda').value ? Number(document.getElementById('v_preco_venda').value) : null,
     comprador: document.getElementById('v_comprador').value.trim() || null,
+    venda_id: document.getElementById('v_venda_id').value || null,
   }).eq('id', acaoAnimalId);
 
   btn.disabled = false;
