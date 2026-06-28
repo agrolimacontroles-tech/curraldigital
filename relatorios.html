@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Relatórios</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('relatorios');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Relatórios</div>
+      <div class="pagesub">Desempenho zootécnico — peso e GMD por fazenda e lote</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <select id="filtroFazenda" onchange="carregarLotesFiltro(this.value); aplicarFiltros()"><option value="">Todas as fazendas</option></select>
+    <select id="filtroLote" onchange="aplicarFiltros()"><option value="">Todos os lotes</option></select>
+    <select id="filtroCategoria" onchange="aplicarFiltros()">
+      <option value="">Todas as categorias</option>
+      <option>Bezerro</option>
+      <option>Garrote</option>
+      <option>Novilho</option>
+      <option>Boi</option>
+      <option>Vaca</option>
+      <option>Misto</option>
+    </select>
+    <select id="filtroStatus" onchange="aplicarFiltros()">
+      <option value="ativo">Ativos</option>
+      <option value="">Todos os status</option>
+      <option value="vendido">Vendidos</option>
+      <option value="morto">Mortos</option>
+    </select>
+    <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:#0a1628;border:0.5px solid #1e3452;border-radius:7px;padding:7px 11px;color:#e2eaf4;font-size:12px;min-width:160px">
+    <button class="btn btn-secondary" onclick="exportarCsv()"><i class="ti ti-download"></i> Exportar CSV</button>
+  </div>
+
+  <div class="metrics" id="metricas">
+    <div class="metric"><span class="spinner"></span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
+
+  <div class="card">
+    <div class="cardh">Ranking detalhado <span style="color:#3d6080;font-weight:400">(clique no cabeçalho pra ordenar)</span></div>
+    <div class="cardb table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
+            <th>Fazenda</th>
+            <th>Lote</th>
+            <th>Categoria</th>
+            <th style="cursor:pointer" onclick="ordenarPor('peso_entrada')">Peso entrada</th>
+            <th style="cursor:pointer" onclick="ordenarPor('peso_atual')">Peso atual</th>
+            <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho total</th>
+            <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">GMD</th>
+            <th style="cursor:pointer" onclick="ordenarPor('dias_no_ciclo')">Dias no ciclo</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaRanking">
+          <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+`;
+
+let animaisCache = [];
+let listaFiltrada = [];
+let sortField = 'gmd_atual';
+let sortDir = 'desc';
+
+async function carregarFiltrosFazenda() {
+  const sel = document.getElementById('filtroFazenda');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+  sel.innerHTML = `<option value="">Todas as fazendas</option>` +
+    (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+}
+
+async function carregarLotesFiltro(fazendaId) {
+  const sel = document.getElementById('filtroLote');
+  if (!fazendaId) {
+    sel.innerHTML = `<option value="">Todos os lotes</option>`;
+    return;
+  }
+  const { data: lotes } = await supabaseClient.from('lotes').select('id, nome').eq('fazenda_id', fazendaId).order('nome');
+  sel.innerHTML = `<option value="">Todos os lotes</option>` +
+    (lotes || []).map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
+}
+
+async function carregarDados() {
+  const { data: animais, error } = await supabaseClient.from('vw_animais_resumo').select('*');
+
+  if (error) {
+    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="9">Erro ao carregar: ${error.message}</td></tr>`;
+    return;
+  }
+
+  animaisCache = animais || [];
+  aplicarFiltros();
+}
+
+function aplicarFiltros() {
+  const fazendaId = document.getElementById('filtroFazenda').value;
+  const loteId = document.getElementById('filtroLote').value;
+  const categoria = document.getElementById('filtroCategoria').value;
+  const status = document.getElementById('filtroStatus').value;
+  const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
+
+  listaFiltrada = animaisCache.filter(a => {
+    if (fazendaId && a.fazenda_id !== fazendaId) return false;
+    if (loteId && a.lote_id !== loteId) return false;
+    if (categoria && a.categoria !== categoria) return false;
+    if (status && a.status !== status) return false;
+    if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
+    return true;
+  });
+
+  renderMetricas();
+  renderGraficos();
+  renderTabela();
+}
+
+function renderMetricas() {
+  const pesoTotal = listaFiltrada.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
+  const gmdValidos = listaFiltrada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+  const pesoMedio = listaFiltrada.length ? pesoTotal / listaFiltrada.length : 0;
+
+  document.getElementById('metricas').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-tag"></i></div>
+      <div><div class="mlabel">Animais no filtro</div><div class="mval">${listaFiltrada.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-success"><i class="ti ti-weight"></i></div>
+      <div><div class="mlabel">Peso total</div><div class="mval">${pesoTotal.toLocaleString('pt-BR')} kg</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+      <div><div class="mlabel">GMD médio</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-scale"></i></div>
+      <div><div class="mlabel">Peso médio</div><div class="mval">${pesoMedio.toFixed(0)} kg</div></div>
+    </div>
+  `;
+}
+
+function renderGraficos() {
+  const porFazenda = agruparGmdPor(listaFiltrada, 'fazenda_nome');
+  const porLote = agruparGmdPor(listaFiltrada, 'lote_nome');
+
+  document.getElementById('graficos').innerHTML = `
+    <div class="card">
+      <div class="cardh">GMD médio por fazenda</div>
+      <div class="cardb">${renderBarras(porFazenda)}</div>
+    </div>
+    <div class="card">
+      <div class="cardh">GMD médio por lote</div>
+      <div class="cardb">${renderBarras(porLote)}</div>
+    </div>
+  `;
+}
+
+function agruparGmdPor(lista, campo) {
+  const grupos = {};
+  lista.forEach(a => {
+    if (a.gmd_atual === null) return;
+    const chave = a[campo] || 'Sem ' + (campo === 'fazenda_nome' ? 'fazenda' : 'lote');
+    if (!grupos[chave]) grupos[chave] = { soma: 0, qtd: 0 };
+    grupos[chave].soma += Number(a.gmd_atual);
+    grupos[chave].qtd += 1;
+  });
+  return Object.entries(grupos)
+    .map(([nome, v]) => ({ nome, media: v.soma / v.qtd }))
+    .sort((a, b) => b.media - a.media);
+}
+
+function renderBarras(grupos) {
+  if (grupos.length === 0) return '<p style="color:#3d6080;font-size:13px">Sem dados suficientes para esse filtro.</p>';
+  const max = Math.max(...grupos.map(g => g.media), 0.01);
+  return grupos.map(g => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-size:12px;color:#7aa3cc;min-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.nome}</span>
+      <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
+        <div style="height:100%;border-radius:3px;width:${(g.media / max) * 100}%;background:#1a4a8a"></div>
+      </div>
+      <span style="font-size:12px;color:#e2eaf4;min-width:54px;text-align:right">${g.media.toFixed(2)} kg/d</span>
+    </div>
+  `).join('');
+}
+
+function ordenarPor(campo) {
+  if (sortField === campo) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortField = campo;
+    sortDir = 'desc';
+  }
+  renderTabela();
+}
+
+function renderTabela() {
+  const ordenada = [...listaFiltrada].sort((a, b) => {
+    let va = a[sortField], vb = b[sortField];
+    if (sortField === 'brinco') { va = String(va); vb = String(vb); }
+    else { va = Number(va) || 0; vb = Number(vb) || 0; }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  if (ordenada.length === 0) {
+    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum animal encontrado com esse filtro.</td></tr>';
+    return;
+  }
+
+  document.getElementById('tabelaRanking').innerHTML = ordenada.map(a => `
+    <tr>
+      <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+      <td>${a.fazenda_nome || '—'}</td>
+      <td>${a.lote_nome || '—'}</td>
+      <td>${a.categoria || '—'}</td>
+      <td>${a.peso_entrada !== null ? Number(a.peso_entrada).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.ganho_total !== null ? Number(a.ganho_total).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) + ' kg/d' : '—'}</td>
+      <td>${a.dias_no_ciclo !== null ? a.dias_no_ciclo + ' dias' : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function exportarCsv() {
+  if (listaFiltrada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+
+  const colunas = ['brinco','fazenda_nome','lote_nome','categoria','peso_entrada','peso_atual','ganho_total','gmd_atual','dias_no_ciclo','status'];
+  const cabecalho = ['Brinco','Fazenda','Lote','Categoria','Peso entrada','Peso atual','Ganho total','GMD','Dias no ciclo','Status'];
+
+  const linhas = [cabecalho.join(';')];
+  listaFiltrada.forEach(a => {
+    const linha = colunas.map(c => {
+      const v = a[c];
+      return v === null || v === undefined ? '' : String(v).replace(/;/g, ',');
+    });
+    linhas.push(linha.join(';'));
+  });
+
+  const csv = '\uFEFF' + linhas.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relatorio-zootecnico-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  carregarFiltrosFazenda();
+  carregarDados();
+})();
+</script>
+
+</body>
+</html>
