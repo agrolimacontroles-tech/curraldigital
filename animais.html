@@ -135,7 +135,7 @@ document.getElementById('mainContent').innerHTML = `
           <div class="fgroup"><label>Frete (R$)</label><input id="a_frete_compra" type="number" step="0.01" placeholder="0" oninput="recalcularCustoTotal()"></div>
         </div>
         <div class="frow cols-3">
-          <div class="fgroup"><label>Custo total (R$)</label><input id="a_custo_total" type="number" step="0.01" placeholder="Calculado automaticamente"></div>
+          <div class="fgroup"><label>Custo total (R$) — calculado pelo sistema</label><input id="a_custo_total" type="number" step="0.01" placeholder="Calculado automaticamente" readonly style="opacity:0.7"></div>
           <div class="fgroup"></div>
           <div class="fgroup"></div>
         </div>
@@ -479,7 +479,6 @@ async function salvarAnimal() {
     peso_entrada: Number(pesoEntrada),
     preco_compra_kg: document.getElementById('a_preco_compra_kg').value ? Number(document.getElementById('a_preco_compra_kg').value) : null,
     frete_compra: document.getElementById('a_frete_compra').value ? Number(document.getElementById('a_frete_compra').value) : 0,
-    custo_total: document.getElementById('a_custo_total').value ? Number(document.getElementById('a_custo_total').value) : null,
     observacoes: document.getElementById('a_observacoes').value.trim() || null,
   };
 
