@@ -77,11 +77,15 @@ document.getElementById('mainContent').innerHTML = `
             <select id="a_categoria">
               <option value="">Selecione...</option>
               <option>Bezerro</option>
+              <option>Bezerra</option>
               <option>Garrote</option>
               <option>Novilho</option>
+              <option>Novilha</option>
               <option>Boi</option>
               <option>Vaca</option>
-              <option>Misto</option>
+              <option>Touro</option>
+              <option>Matrona</option>
+              <option>Vaca seca</option>
             </select>
           </div>
         </div>
@@ -890,7 +894,7 @@ async function processarPlanilhaAnimais() {
   const mapaLotes = new Map((lotes || []).map(l => [`${l.fazenda_id}|${normalizarTexto(l.nome)}`, l.id]));
   const mapaMangas = new Map((mangas || []).map(m => [`${m.fazenda_id}|${normalizarTexto(m.numero)}`, m.id]));
 
-  const categoriasValidas = ['Bezerro', 'Garrote', 'Novilho', 'Boi', 'Vaca', 'Misto'];
+  const categoriasValidas = ['Bezerro', 'Bezerra', 'Garrote', 'Novilho', 'Novilha', 'Boi', 'Vaca', 'Touro', 'Matrona', 'Vaca seca'];
   const mapaCategorias = new Map(categoriasValidas.map(c => [normalizarTexto(c), c]));
 
   const resultados = [];
@@ -937,7 +941,7 @@ async function processarPlanilhaAnimais() {
     const categoriaTexto = String(linha.categoria || '').trim();
     if (categoriaTexto) {
       categoria = mapaCategorias.get(normalizarTexto(categoriaTexto));
-      if (!categoria) { erro(`Categoria "${categoriaTexto}" inválida (use Bezerro, Garrote, Novilho, Boi, Vaca ou Misto).`); continue; }
+      if (!categoria) { erro(`Categoria "${categoriaTexto}" inválida (use Bezerro, Bezerra, Garrote, Novilho, Novilha, Boi, Vaca, Touro, Matrona ou Vaca seca).`); continue; }
     }
 
     const castradoTexto = normalizarTexto(linha.castrado);
