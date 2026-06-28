@@ -120,8 +120,12 @@ document.getElementById('mainContent').innerHTML = `
           <div class="fgroup"><label>Data de desmame</label><input id="a_data_desmame" type="date"></div>
           <div class="fgroup"><label>Data de entrada *</label><input id="a_data_entrada" type="date"></div>
         </div>
-        <div class="frow cols-1">
+        <div class="frow">
           <div class="fgroup"><label>Produtor de origem</label><input id="a_produtor_origem" placeholder="Nome do produtor / fazenda de origem"></div>
+          <div class="fgroup">
+            <label>Compra de origem</label>
+            <select id="a_compra_id"><option value="">Sem vínculo / compra individual</option></select>
+          </div>
         </div>
       </div>
     </div>
@@ -249,11 +253,12 @@ function mostrarAba(aba) {
 function limparFormulario() {
   animalEditandoId = null;
   ['a_brinco','a_sexo','a_categoria','a_raca','a_pelagem','a_marca','a_fazenda_id','a_lote_id','a_manga_id',
-   'a_data_nascimento','a_data_desmame','a_produtor_origem','a_peso_entrada','a_preco_compra_kg',
-   'a_frete_compra','a_custo_total','a_observacoes'].forEach(id => {
+   'a_data_nascimento','a_data_desmame','a_produtor_origem','a_compra_id','a_peso_entrada','a_preco_compra_kg',
+   'a_frete_compra','a_observacoes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('a_castrado').checked = false;
+  document.getElementById('a_custo_total').value = '';
   document.getElementById('a_data_entrada').value = new Date().toISOString().slice(0, 10);
   document.getElementById('btnSalvarAnimal').textContent = 'Cadastrar animal';
   document.getElementById('msgCadastro').className = 'msg';
@@ -286,6 +291,19 @@ async function carregarSelectsCadastro() {
     fazendas.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
 
   if (valorAtual) selFazenda.value = valorAtual;
+
+  const selCompra = document.getElementById('a_compra_id');
+  const { data: compras } = await supabaseClient
+    .from('compras')
+    .select('id, data_compra, vendedor, nota_fiscal')
+    .order('data_compra', { ascending: false });
+
+  selCompra.innerHTML = `<option value="">Sem vínculo / compra individual</option>` +
+    (compras || []).map(c => {
+      const data = new Date(c.data_compra + 'T00:00:00').toLocaleDateString('pt-BR');
+      const label = [data, c.vendedor, c.nota_fiscal ? 'NF ' + c.nota_fiscal : null].filter(Boolean).join(' — ');
+      return `<option value="${c.id}">${label}</option>`;
+    }).join('');
 }
 
 async function carregarLotesEMangas(fazendaId, lotePreSelecionado, mangaPreSelecionado) {
@@ -428,6 +446,7 @@ async function editarAnimal(id) {
   document.getElementById('a_data_desmame').value = a.data_desmame || '';
   document.getElementById('a_data_entrada').value = a.data_entrada || '';
   document.getElementById('a_produtor_origem').value = a.produtor_origem || '';
+  document.getElementById('a_compra_id').value = a.compra_id || '';
   document.getElementById('a_peso_entrada').value = a.peso_entrada || '';
   document.getElementById('a_preco_compra_kg').value = a.preco_compra_kg || '';
   document.getElementById('a_frete_compra').value = a.frete_compra || '';
@@ -476,6 +495,7 @@ async function salvarAnimal() {
     data_desmame: document.getElementById('a_data_desmame').value || null,
     data_entrada: dataEntrada,
     produtor_origem: document.getElementById('a_produtor_origem').value.trim() || null,
+    compra_id: document.getElementById('a_compra_id').value || null,
     peso_entrada: Number(pesoEntrada),
     preco_compra_kg: document.getElementById('a_preco_compra_kg').value ? Number(document.getElementById('a_preco_compra_kg').value) : null,
     frete_compra: document.getElementById('a_frete_compra').value ? Number(document.getElementById('a_frete_compra').value) : 0,
