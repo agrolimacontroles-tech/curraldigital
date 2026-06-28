@@ -114,7 +114,7 @@ function showMsg(text, type) {
 }
 
 async function carregarFazendas() {
-  const { data: fazendas, error } = await supabase
+  const { data: fazendas, error } = await supabaseClient
     .from('fazendas')
     .select('*')
     .order('nome');
