@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Lotes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('lotes');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Lotes</div>
+      <div class="pagesub" id="totalLotes">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de lotes</button>
+    <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar lote</button>
+  </div>
+
+  <div id="abaLista">
+    <div class="card">
+      <div class="cardb table-wrap">
+        <table>
+          <thead>
+            <tr><th>Lote</th><th>Fazenda</th><th>Categoria</th><th>Animais ativos</th><th>Peso total</th><th>GMD médio</th><th></th></tr>
+          </thead>
+          <tbody id="tabelaLotes">
+            <tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaCadastro" style="display:none">
+    <div id="msgCadastro" class="msg"></div>
+    <div class="card">
+      <div class="cardh">Identificação</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Nome do lote *</label><input id="l_nome" placeholder="Lote 01 - Recria"></div>
+          <div class="fgroup">
+            <label>Fazenda *</label>
+            <select id="l_fazenda_id"><option value="">Carregando fazendas...</option></select>
+          </div>
+          <div class="fgroup">
+            <label>Categoria</label>
+            <select id="l_categoria">
+              <option value="">Selecione...</option>
+              <option>Bezerro(a)</option>
+              <option>Garrote</option>
+              <option>Novilha</option>
+              <option>Boi</option>
+              <option>Vaca</option>
+              <option>Touro</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Data de formação</label><input id="l_data_formacao" type="date"></div>
+          <div class="fgroup"></div>
+          <div class="fgroup"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnSalvarLote">Cadastrar lote</button>
+          <button class="btn btn-secondary" onclick="limparFormulario()">Limpar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+let loteEditandoId = null;
+
+function mostrarAba(aba) {
+  document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
+  document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
+  document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  if (aba === 'lista') carregarLotes();
+  if (aba === 'cadastro') carregarFazendasNoSelect();
+}
+
+function limparFormulario() {
+  loteEditandoId = null;
+  document.getElementById('l_nome').value = '';
+  document.getElementById('l_fazenda_id').value = '';
+  document.getElementById('l_categoria').value = '';
+  document.getElementById('l_data_formacao').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('btnSalvarLote').textContent = 'Cadastrar lote';
+  document.getElementById('msgCadastro').className = 'msg';
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msgCadastro');
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function carregarFazendasNoSelect() {
+  const sel = document.getElementById('l_fazenda_id');
+  const valorAtual = sel.value;
+
+  const { data: fazendas, error } = await supabaseClient
+    .from('fazendas')
+    .select('id, nome')
+    .order('nome');
+
+  if (error) {
+    sel.innerHTML = `<option value="">Erro ao carregar fazendas</option>`;
+    return;
+  }
+
+  if (!fazendas || fazendas.length === 0) {
+    sel.innerHTML = `<option value="">Nenhuma fazenda cadastrada — cadastre uma primeiro</option>`;
+    return;
+  }
+
+  sel.innerHTML = `<option value="">Selecione...</option>` +
+    fazendas.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  if (valorAtual) sel.value = valorAtual;
+}
+
+async function carregarLotes() {
+  const { data: lotes, error } = await supabaseClient
+    .from('vw_lotes_resumo')
+    .select('*')
+    .order('nome');
+
+  if (error) {
+    document.getElementById('tabelaLotes').innerHTML = `<tr class="empty-row"><td colspan="7">Erro ao carregar: ${error.message}</td></tr>`;
+    return;
+  }
+
+  document.getElementById('totalLotes').textContent = `${lotes.length} lote${lotes.length === 1 ? '' : 's'} cadastrado${lotes.length === 1 ? '' : 's'}`;
+
+  if (lotes.length === 0) {
+    document.getElementById('tabelaLotes').innerHTML = '<tr class="empty-row"><td colspan="7">Nenhum lote cadastrado ainda.</td></tr>';
+    return;
+  }
+
+  document.getElementById('tabelaLotes').innerHTML = lotes.map(l => `
+    <tr>
+      <td><b style="color:#e2eaf4">${l.nome}</b></td>
+      <td>${l.fazenda_nome || '—'}</td>
+      <td>${l.categoria ? `<span class="badge bg-info">${l.categoria}</span>` : '—'}</td>
+      <td>${l.animais_ativos || 0}</td>
+      <td>${l.peso_total !== null ? Number(l.peso_total).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${l.gmd_medio !== null ? Number(l.gmd_medio).toFixed(2) + ' kg/d' : '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary" style="padding:4px 10px" onclick="editarLote('${l.id}')"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirLote('${l.id}','${l.nome.replace(/'/g, "\\'")}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function editarLote(id) {
+  const { data: l, error } = await supabaseClient.from('lotes').select('*').eq('id', id).single();
+  if (error) { alert('Erro ao carregar lote: ' + error.message); return; }
+
+  loteEditandoId = id;
+  mostrarAba('cadastro');
+
+  await carregarFazendasNoSelect();
+
+  document.getElementById('l_nome').value = l.nome || '';
+  document.getElementById('l_fazenda_id').value = l.fazenda_id || '';
+  document.getElementById('l_categoria').value = l.categoria || '';
+  document.getElementById('l_data_formacao').value = l.data_formacao || '';
+  document.getElementById('btnSalvarLote').textContent = 'Salvar alterações';
+}
+
+async function excluirLote(id, nome) {
+  if (!confirm(`Excluir o "${nome}"? Essa ação não pode ser desfeita.`)) return;
+
+  const { error } = await supabaseClient.from('lotes').delete().eq('id', id);
+  if (error) {
+    alert('Não foi possível excluir: ' + error.message + '\n\nVerifique se ainda existem animais vinculados a esse lote.');
+    return;
+  }
+  carregarLotes();
+}
+
+async function salvarLote() {
+  const nome = document.getElementById('l_nome').value.trim();
+  const fazendaId = document.getElementById('l_fazenda_id').value;
+
+  if (!nome) { showMsg('O nome do lote é obrigatório.', 'error'); return; }
+  if (!fazendaId) { showMsg('Selecione a fazenda.', 'error'); return; }
+
+  const payload = {
+    nome,
+    fazenda_id: fazendaId,
+    categoria: document.getElementById('l_categoria').value || null,
+    data_formacao: document.getElementById('l_data_formacao').value || null,
+  };
+
+  const btn = document.getElementById('btnSalvarLote');
+  btn.disabled = true;
+
+  let error;
+  if (loteEditandoId) {
+    ({ error } = await supabaseClient.from('lotes').update(payload).eq('id', loteEditandoId));
+  } else {
+    ({ error } = await supabaseClient.from('lotes').insert(payload));
+  }
+
+  btn.disabled = false;
+
+  if (error) {
+    const msg = error.code === '23505'
+      ? 'Já existe um lote com esse nome nessa fazenda.'
+      : 'Erro ao salvar: ' + error.message;
+    showMsg(msg, 'error');
+    return;
+  }
+
+  showMsg(loteEditandoId ? 'Lote atualizado com sucesso!' : 'Lote cadastrado com sucesso!', 'success');
+  limparFormulario();
+  mostrarAba('lista');
+}
+
+document.getElementById('btnSalvarLote').addEventListener('click', salvarLote);
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  document.getElementById('l_data_formacao').value = new Date().toISOString().slice(0, 10);
+  carregarLotes();
+})();
+</script>
+
+</body>
+</html>
