@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurralDigital — Animais</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('animais');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Animais</div>
+      <div class="pagesub" id="totalAnimais">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de animais</button>
+    <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar animal</button>
+  </div>
+
+  <div id="abaLista">
+    <div class="toolbar">
+      <select id="filtroFazenda" onchange="aplicarFiltros()"><option value="">Todas as fazendas</option></select>
+      <select id="filtroStatus" onchange="aplicarFiltros()">
+        <option value="">Todos os status</option>
+        <option value="ativo">Ativo</option>
+        <option value="vendido">Vendido</option>
+        <option value="morto">Morto</option>
+      </select>
+      <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:#0a1628;border:0.5px solid #1e3452;border-radius:7px;padding:7px 11px;color:#e2eaf4;font-size:12px;min-width:160px">
+    </div>
+    <div id="msgLista" class="msg"></div>
+    <div class="card">
+      <div class="cardb table-wrap">
+        <table>
+          <thead>
+            <tr><th>Brinco</th><th>Fazenda</th><th>Lote / Manga</th><th>Sexo / Categoria</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="tabelaAnimais">
+            <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaCadastro" style="display:none">
+    <div id="msgCadastro" class="msg"></div>
+
+    <div class="card">
+      <div class="cardh">Identificação</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Brinco *</label><input id="a_brinco" placeholder="0001"></div>
+          <div class="fgroup">
+            <label>Sexo *</label>
+            <select id="a_sexo">
+              <option value="">Selecione...</option>
+              <option value="Macho">Macho</option>
+              <option value="Fêmea">Fêmea</option>
+            </select>
+          </div>
+          <div class="fgroup">
+            <label>Categoria</label>
+            <select id="a_categoria">
+              <option value="">Selecione...</option>
+              <option>Bezerro(a)</option>
+              <option>Garrote</option>
+              <option>Novilha</option>
+              <option>Boi</option>
+              <option>Vaca</option>
+              <option>Touro</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Raça</label><input id="a_raca" placeholder="Nelore"></div>
+          <div class="fgroup"><label>Pelagem</label><input id="a_pelagem" placeholder="Branco"></div>
+          <div class="fgroup"><label>Marca / Sinal</label><input id="a_marca" placeholder="Ex: marca de fogo"></div>
+        </div>
+        <label class="fcheck"><input type="checkbox" id="a_castrado"> Animal castrado</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardh">Localização</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup">
+            <label>Fazenda *</label>
+            <select id="a_fazenda_id" onchange="carregarLotesEMangas(this.value)"><option value="">Carregando fazendas...</option></select>
+          </div>
+          <div class="fgroup">
+            <label>Lote</label>
+            <select id="a_lote_id"><option value="">Selecione a fazenda primeiro</option></select>
+          </div>
+          <div class="fgroup">
+            <label>Manga</label>
+            <select id="a_manga_id"><option value="">Selecione a fazenda primeiro</option></select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardh">Origem e datas</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Data de nascimento</label><input id="a_data_nascimento" type="date"></div>
+          <div class="fgroup"><label>Data de desmame</label><input id="a_data_desmame" type="date"></div>
+          <div class="fgroup"><label>Data de entrada *</label><input id="a_data_entrada" type="date"></div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Produtor de origem</label><input id="a_produtor_origem" placeholder="Nome do produtor / fazenda de origem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardh">Compra e custos</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Peso de entrada (kg) *</label><input id="a_peso_entrada" type="number" step="0.01" placeholder="220" oninput="recalcularCustoTotal()"></div>
+          <div class="fgroup"><label>Preço de compra (R$/kg)</label><input id="a_preco_compra_kg" type="number" step="0.01" placeholder="14.50" oninput="recalcularCustoTotal()"></div>
+          <div class="fgroup"><label>Frete (R$)</label><input id="a_frete_compra" type="number" step="0.01" placeholder="0" oninput="recalcularCustoTotal()"></div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Custo total (R$)</label><input id="a_custo_total" type="number" step="0.01" placeholder="Calculado automaticamente"></div>
+          <div class="fgroup"></div>
+          <div class="fgroup"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardh">Observações</div>
+      <div class="cardb">
+        <div class="frow cols-1">
+          <div class="fgroup"><textarea id="a_observacoes" placeholder="Observações gerais sobre o animal..."></textarea></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnSalvarAnimal">Cadastrar animal</button>
+          <button class="btn btn-secondary" onclick="limparFormulario()">Limpar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: registrar pesagem -->
+  <div class="modal-overlay" id="modalPesagem" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modalPesagemTitulo">Registrar pesagem</span>
+        <button class="modal-close" onclick="fecharModal('modalPesagem')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="msgPesagem" class="msg"></div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Data da pesagem</label><input id="p_data_pesagem" type="date"></div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Peso (kg)</label><input id="p_peso" type="number" step="0.01" placeholder="280"></div>
+        </div>
+        <div id="historicoPesagens" style="color:#3d6080;font-size:12px"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnSalvarPesagem" onclick="salvarPesagem()">Registrar</button>
+        <button class="btn btn-secondary" onclick="fecharModal('modalPesagem')">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: registrar venda -->
+  <div class="modal-overlay" id="modalVenda" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modalVendaTitulo">Registrar venda</span>
+        <button class="modal-close" onclick="fecharModal('modalVenda')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="msgVenda" class="msg"></div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Data da venda *</label><input id="v_data_venda" type="date"></div>
+        </div>
+        <div class="frow">
+          <div class="fgroup"><label>Peso de saída (kg) *</label><input id="v_peso_saida" type="number" step="0.01" placeholder="480"></div>
+          <div class="fgroup"><label>Valor da venda (R$)</label><input id="v_preco_venda" type="number" step="0.01" placeholder="4500"></div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Comprador</label><input id="v_comprador" placeholder="Nome do comprador"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnSalvarVenda" onclick="salvarVenda()">Confirmar venda</button>
+        <button class="btn btn-secondary" onclick="fecharModal('modalVenda')">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: registrar morte -->
+  <div class="modal-overlay" id="modalMorte" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modalMorteTitulo">Registrar morte</span>
+        <button class="modal-close" onclick="fecharModal('modalMorte')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="msgMorte" class="msg"></div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Data do óbito *</label><input id="d_data_morte" type="date"></div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Causa</label><input id="d_causa_morte" placeholder="Ex: pneumonia, acidente..."></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" id="btnSalvarMorte" onclick="salvarMorte()">Confirmar óbito</button>
+        <button class="btn btn-secondary" onclick="fecharModal('modalMorte')">Cancelar</button>
+      </div>
+    </div>
+  </div>
+`;
+
+let animalEditandoId = null;
+let animaisCache = [];
+let acaoAnimalId = null;
+let acaoAnimalBrinco = null;
+
+// ---------- Navegação entre abas ----------
+function mostrarAba(aba) {
+  document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
+  document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
+  document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  if (aba === 'lista') carregarAnimais();
+  if (aba === 'cadastro') carregarSelectsCadastro();
+}
+
+function limparFormulario() {
+  animalEditandoId = null;
+  ['a_brinco','a_sexo','a_categoria','a_raca','a_pelagem','a_marca','a_fazenda_id','a_lote_id','a_manga_id',
+   'a_data_nascimento','a_data_desmame','a_produtor_origem','a_peso_entrada','a_preco_compra_kg',
+   'a_frete_compra','a_custo_total','a_observacoes'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('a_castrado').checked = false;
+  document.getElementById('a_data_entrada').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('btnSalvarAnimal').textContent = 'Cadastrar animal';
+  document.getElementById('msgCadastro').className = 'msg';
+}
+
+function showMsg(elId, text, type) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+// ---------- Selects (fazenda / lote / manga) ----------
+async function carregarSelectsCadastro() {
+  const selFazenda = document.getElementById('a_fazenda_id');
+  const valorAtual = selFazenda.value;
+
+  const { data: fazendas, error } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+
+  if (error) {
+    selFazenda.innerHTML = `<option value="">Erro ao carregar fazendas</option>`;
+    return;
+  }
+  if (!fazendas || fazendas.length === 0) {
+    selFazenda.innerHTML = `<option value="">Nenhuma fazenda cadastrada — cadastre uma primeiro</option>`;
+    return;
+  }
+
+  selFazenda.innerHTML = `<option value="">Selecione...</option>` +
+    fazendas.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  if (valorAtual) selFazenda.value = valorAtual;
+}
+
+async function carregarLotesEMangas(fazendaId, lotePreSelecionado, mangaPreSelecionado) {
+  const selLote = document.getElementById('a_lote_id');
+  const selManga = document.getElementById('a_manga_id');
+
+  if (!fazendaId) {
+    selLote.innerHTML = `<option value="">Selecione a fazenda primeiro</option>`;
+    selManga.innerHTML = `<option value="">Selecione a fazenda primeiro</option>`;
+    return;
+  }
+
+  selLote.innerHTML = `<option value="">Carregando...</option>`;
+  selManga.innerHTML = `<option value="">Carregando...</option>`;
+
+  const [{ data: lotes }, { data: mangas }] = await Promise.all([
+    supabaseClient.from('lotes').select('id, nome').eq('fazenda_id', fazendaId).order('nome'),
+    supabaseClient.from('mangas').select('id, numero').eq('fazenda_id', fazendaId).order('numero'),
+  ]);
+
+  selLote.innerHTML = `<option value="">Sem lote</option>` +
+    (lotes || []).map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
+  selManga.innerHTML = `<option value="">Sem manga</option>` +
+    (mangas || []).map(m => `<option value="${m.id}">Manga ${m.numero}</option>`).join('');
+
+  if (lotePreSelecionado) selLote.value = lotePreSelecionado;
+  if (mangaPreSelecionado) selManga.value = mangaPreSelecionado;
+}
+
+function recalcularCustoTotal() {
+  const peso = parseFloat(document.getElementById('a_peso_entrada').value) || 0;
+  const precoKg = parseFloat(document.getElementById('a_preco_compra_kg').value) || 0;
+  const frete = parseFloat(document.getElementById('a_frete_compra').value) || 0;
+  if (peso && precoKg) {
+    document.getElementById('a_custo_total').value = (peso * precoKg + frete).toFixed(2);
+  }
+}
+
+// ---------- Lista ----------
+async function carregarFiltroFazendas() {
+  const sel = document.getElementById('filtroFazenda');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+  sel.innerHTML = `<option value="">Todas as fazendas</option>` +
+    (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+}
+
+async function carregarAnimais() {
+  carregarFiltroFazendas();
+
+  const { data: animais, error } = await supabaseClient
+    .from('vw_animais_resumo')
+    .select('*')
+    .order('data_entrada', { ascending: false });
+
+  if (error) {
+    document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="9">Erro ao carregar: ${error.message}</td></tr>`;
+    return;
+  }
+
+  animaisCache = animais || [];
+  document.getElementById('totalAnimais').textContent =
+    `${animaisCache.length} animal${animaisCache.length === 1 ? '' : 'is'} cadastrado${animaisCache.length === 1 ? '' : 's'}`;
+
+  aplicarFiltros();
+}
+
+function aplicarFiltros() {
+  const fazendaId = document.getElementById('filtroFazenda').value;
+  const status = document.getElementById('filtroStatus').value;
+  const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
+
+  const filtrados = animaisCache.filter(a => {
+    if (fazendaId && a.fazenda_id !== fazendaId) return false;
+    if (status && a.status !== status) return false;
+    if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
+    return true;
+  });
+
+  renderTabelaAnimais(filtrados);
+}
+
+function renderTabelaAnimais(lista) {
+  if (lista.length === 0) {
+    document.getElementById('tabelaAnimais').innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum animal encontrado.</td></tr>';
+    return;
+  }
+
+  document.getElementById('tabelaAnimais').innerHTML = lista.map(a => {
+    let statusBadge = '<span class="badge bg-success">Ativo</span>';
+    if (a.status === 'vendido') statusBadge = '<span class="badge bg-info">Vendido</span>';
+    else if (a.status === 'morto') statusBadge = '<span class="badge bg-danger">Morto</span>';
+
+    const localizacao = [a.lote_nome, a.manga_numero ? `Manga ${a.manga_numero}` : null].filter(Boolean).join(' / ') || '—';
+    const sexoCategoria = [a.sexo, a.categoria].filter(Boolean).join(' · ') || '—';
+    const acoesAtivo = a.status === 'ativo' ? `
+        <button class="btn btn-secondary" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-currency-dollar"></i></button>
+        <button class="btn btn-danger" style="padding:4px 10px" title="Registrar óbito" onclick="abrirModalMorte('${a.id}','${a.brinco}')"><i class="ti ti-alert-triangle"></i></button>
+      ` : '';
+
+    return `
+      <tr>
+        <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+        <td>${a.fazenda_nome || '—'}</td>
+        <td>${localizacao}</td>
+        <td>${sexoCategoria}</td>
+        <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+        <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) + ' kg/d' : '—'}</td>
+        <td>${a.dias_no_ciclo !== null ? a.dias_no_ciclo + ' dias' : '—'}</td>
+        <td>${statusBadge}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary" style="padding:4px 10px" title="Registrar pesagem" onclick="abrirModalPesagem('${a.id}','${a.brinco}')"><i class="ti ti-scale"></i></button>
+          <button class="btn btn-secondary" style="padding:4px 10px" title="Editar" onclick="editarAnimal('${a.id}')"><i class="ti ti-pencil"></i></button>
+          ${acoesAtivo}
+          <button class="btn btn-danger" style="padding:4px 10px" title="Excluir" onclick="excluirAnimal('${a.id}','${a.brinco}')"><i class="ti ti-trash"></i></button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ---------- CRUD animal ----------
+async function editarAnimal(id) {
+  const { data: a, error } = await supabaseClient.from('animais').select('*').eq('id', id).single();
+  if (error) { alert('Erro ao carregar animal: ' + error.message); return; }
+
+  animalEditandoId = id;
+  mostrarAba('cadastro');
+  await carregarSelectsCadastro();
+
+  document.getElementById('a_brinco').value = a.brinco || '';
+  document.getElementById('a_sexo').value = a.sexo || '';
+  document.getElementById('a_categoria').value = a.categoria || '';
+  document.getElementById('a_raca').value = a.raca || '';
+  document.getElementById('a_pelagem').value = a.pelagem || '';
+  document.getElementById('a_marca').value = a.marca || '';
+  document.getElementById('a_castrado').checked = !!a.castrado;
+  document.getElementById('a_fazenda_id').value = a.fazenda_id || '';
+  await carregarLotesEMangas(a.fazenda_id, a.lote_id, a.manga_id);
+  document.getElementById('a_data_nascimento').value = a.data_nascimento || '';
+  document.getElementById('a_data_desmame').value = a.data_desmame || '';
+  document.getElementById('a_data_entrada').value = a.data_entrada || '';
+  document.getElementById('a_produtor_origem').value = a.produtor_origem || '';
+  document.getElementById('a_peso_entrada').value = a.peso_entrada || '';
+  document.getElementById('a_preco_compra_kg').value = a.preco_compra_kg || '';
+  document.getElementById('a_frete_compra').value = a.frete_compra || '';
+  document.getElementById('a_custo_total').value = a.custo_total || '';
+  document.getElementById('a_observacoes').value = a.observacoes || '';
+  document.getElementById('btnSalvarAnimal').textContent = 'Salvar alterações';
+}
+
+async function excluirAnimal(id, brinco) {
+  if (!confirm(`Excluir o animal #${brinco}? Essa ação não pode ser desfeita (inclui o histórico de pesagens).`)) return;
+
+  await supabaseClient.from('pesagens').delete().eq('animal_id', id);
+  const { error } = await supabaseClient.from('animais').delete().eq('id', id);
+  if (error) {
+    alert('Não foi possível excluir: ' + error.message);
+    return;
+  }
+  carregarAnimais();
+}
+
+async function salvarAnimal() {
+  const brinco = document.getElementById('a_brinco').value.trim();
+  const sexo = document.getElementById('a_sexo').value;
+  const fazendaId = document.getElementById('a_fazenda_id').value;
+  const dataEntrada = document.getElementById('a_data_entrada').value;
+  const pesoEntrada = document.getElementById('a_peso_entrada').value;
+
+  if (!brinco) { showMsg('msgCadastro', 'O brinco é obrigatório.', 'error'); return; }
+  if (!sexo) { showMsg('msgCadastro', 'Selecione o sexo do animal.', 'error'); return; }
+  if (!fazendaId) { showMsg('msgCadastro', 'Selecione a fazenda.', 'error'); return; }
+  if (!dataEntrada) { showMsg('msgCadastro', 'A data de entrada é obrigatória.', 'error'); return; }
+  if (!pesoEntrada) { showMsg('msgCadastro', 'O peso de entrada é obrigatório.', 'error'); return; }
+
+  const payload = {
+    brinco,
+    sexo,
+    categoria: document.getElementById('a_categoria').value || null,
+    raca: document.getElementById('a_raca').value.trim() || null,
+    pelagem: document.getElementById('a_pelagem').value.trim() || null,
+    marca: document.getElementById('a_marca').value.trim() || null,
+    castrado: document.getElementById('a_castrado').checked,
+    fazenda_id: fazendaId,
+    lote_id: document.getElementById('a_lote_id').value || null,
+    manga_id: document.getElementById('a_manga_id').value || null,
+    data_nascimento: document.getElementById('a_data_nascimento').value || null,
+    data_desmame: document.getElementById('a_data_desmame').value || null,
+    data_entrada: dataEntrada,
+    produtor_origem: document.getElementById('a_produtor_origem').value.trim() || null,
+    peso_entrada: Number(pesoEntrada),
+    preco_compra_kg: document.getElementById('a_preco_compra_kg').value ? Number(document.getElementById('a_preco_compra_kg').value) : null,
+    frete_compra: document.getElementById('a_frete_compra').value ? Number(document.getElementById('a_frete_compra').value) : 0,
+    custo_total: document.getElementById('a_custo_total').value ? Number(document.getElementById('a_custo_total').value) : null,
+    observacoes: document.getElementById('a_observacoes').value.trim() || null,
+  };
+
+  const btn = document.getElementById('btnSalvarAnimal');
+  btn.disabled = true;
+
+  let error;
+  if (animalEditandoId) {
+    ({ error } = await supabaseClient.from('animais').update(payload).eq('id', animalEditandoId));
+  } else {
+    ({ error } = await supabaseClient.from('animais').insert(payload));
+  }
+
+  btn.disabled = false;
+
+  if (error) {
+    const msg = error.code === '23505'
+      ? 'Já existe um animal cadastrado com esse brinco.'
+      : 'Erro ao salvar: ' + error.message;
+    showMsg('msgCadastro', msg, 'error');
+    return;
+  }
+
+  showMsg('msgCadastro', animalEditandoId ? 'Animal atualizado com sucesso!' : 'Animal cadastrado com sucesso!', 'success');
+  limparFormulario();
+  mostrarAba('lista');
+}
+
+document.getElementById('btnSalvarAnimal').addEventListener('click', salvarAnimal);
+
+// ---------- Modal: pesagem ----------
+async function abrirModalPesagem(animalId, brinco) {
+  acaoAnimalId = animalId;
+  acaoAnimalBrinco = brinco;
+  document.getElementById('modalPesagemTitulo').textContent = `Registrar pesagem — #${brinco}`;
+  document.getElementById('p_data_pesagem').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('p_peso').value = '';
+  document.getElementById('msgPesagem').className = 'msg';
+  document.getElementById('historicoPesagens').innerHTML = 'Carregando histórico...';
+  document.getElementById('modalPesagem').style.display = 'flex';
+
+  const { data: historico } = await supabaseClient
+    .from('pesagens')
+    .select('data_pesagem, peso, gmd_periodo')
+    .eq('animal_id', animalId)
+    .order('data_pesagem', { ascending: false })
+    .limit(5);
+
+  if (!historico || historico.length === 0) {
+    document.getElementById('historicoPesagens').innerHTML = 'Nenhuma pesagem registrada ainda.';
+    return;
+  }
+
+  document.getElementById('historicoPesagens').innerHTML = `
+    <b style="color:#5a7fa0">Últimas pesagens</b>
+    <table class="mini-table">
+      ${historico.map(h => `
+        <tr>
+          <td>${new Date(h.data_pesagem + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+          <td>${Number(h.peso).toLocaleString('pt-BR')} kg</td>
+          <td>${h.gmd_periodo !== null ? Number(h.gmd_periodo).toFixed(2) + ' kg/d' : '—'}</td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
+async function salvarPesagem() {
+  const data = document.getElementById('p_data_pesagem').value;
+  const peso = document.getElementById('p_peso').value;
+
+  if (!data) { showMsg('msgPesagem', 'Informe a data da pesagem.', 'error'); return; }
+  if (!peso) { showMsg('msgPesagem', 'Informe o peso.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvarPesagem');
+  btn.disabled = true;
+
+  const { error } = await supabaseClient.from('pesagens').insert({
+    animal_id: acaoAnimalId,
+    data_pesagem: data,
+    peso: Number(peso),
+  });
+
+  btn.disabled = false;
+
+  if (error) {
+    showMsg('msgPesagem', 'Erro ao registrar: ' + error.message, 'error');
+    return;
+  }
+
+  fecharModal('modalPesagem');
+  carregarAnimais();
+}
+
+// ---------- Modal: venda ----------
+function abrirModalVenda(animalId, brinco) {
+  acaoAnimalId = animalId;
+  acaoAnimalBrinco = brinco;
+  document.getElementById('modalVendaTitulo').textContent = `Registrar venda — #${brinco}`;
+  document.getElementById('v_data_venda').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('v_peso_saida').value = '';
+  document.getElementById('v_preco_venda').value = '';
+  document.getElementById('v_comprador').value = '';
+  document.getElementById('msgVenda').className = 'msg';
+  document.getElementById('modalVenda').style.display = 'flex';
+}
+
+async function salvarVenda() {
+  const dataVenda = document.getElementById('v_data_venda').value;
+  const pesoSaida = document.getElementById('v_peso_saida').value;
+
+  if (!dataVenda) { showMsg('msgVenda', 'Informe a data da venda.', 'error'); return; }
+  if (!pesoSaida) { showMsg('msgVenda', 'Informe o peso de saída.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvarVenda');
+  btn.disabled = true;
+
+  const { error } = await supabaseClient.from('animais').update({
+    status: 'vendido',
+    data_venda: dataVenda,
+    peso_saida: Number(pesoSaida),
+    preco_venda: document.getElementById('v_preco_venda').value ? Number(document.getElementById('v_preco_venda').value) : null,
+    comprador: document.getElementById('v_comprador').value.trim() || null,
+  }).eq('id', acaoAnimalId);
+
+  btn.disabled = false;
+
+  if (error) {
+    showMsg('msgVenda', 'Erro ao registrar venda: ' + error.message, 'error');
+    return;
+  }
+
+  fecharModal('modalVenda');
+  carregarAnimais();
+}
+
+// ---------- Modal: morte ----------
+function abrirModalMorte(animalId, brinco) {
+  acaoAnimalId = animalId;
+  acaoAnimalBrinco = brinco;
+  document.getElementById('modalMorteTitulo').textContent = `Registrar óbito — #${brinco}`;
+  document.getElementById('d_data_morte').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('d_causa_morte').value = '';
+  document.getElementById('msgMorte').className = 'msg';
+  document.getElementById('modalMorte').style.display = 'flex';
+}
+
+async function salvarMorte() {
+  const dataMorte = document.getElementById('d_data_morte').value;
+  if (!dataMorte) { showMsg('msgMorte', 'Informe a data do óbito.', 'error'); return; }
+
+  if (!confirm(`Confirmar óbito do animal #${acaoAnimalBrinco}? Essa ação altera o status para "morto".`)) return;
+
+  const btn = document.getElementById('btnSalvarMorte');
+  btn.disabled = true;
+
+  const { error } = await supabaseClient.from('animais').update({
+    status: 'morto',
+    data_morte: dataMorte,
+    causa_morte: document.getElementById('d_causa_morte').value.trim() || null,
+  }).eq('id', acaoAnimalId);
+
+  btn.disabled = false;
+
+  if (error) {
+    showMsg('msgMorte', 'Erro ao registrar óbito: ' + error.message, 'error');
+    return;
+  }
+
+  fecharModal('modalMorte');
+  carregarAnimais();
+}
+
+// ---------- Modal genérico ----------
+function fecharModal(modalId) {
+  document.getElementById(modalId).style.display = 'none';
+}
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  document.getElementById('a_data_entrada').value = new Date().toISOString().slice(0, 10);
+  carregarAnimais();
+})();
+</script>
+
+</body>
+</html>
