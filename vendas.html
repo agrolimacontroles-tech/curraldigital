@@ -75,6 +75,37 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
 
+    <div class="card" id="cardAnimaisVendidos">
+      <div class="cardh">Animais vendidos</div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup">
+            <label>Fazenda</label>
+            <select id="v_filtro_fazenda" onchange="carregarLotesFiltro(this.value); carregarAnimaisDisponiveis()"><option value="">Todas</option></select>
+          </div>
+          <div class="fgroup">
+            <label>Lote</label>
+            <select id="v_filtro_lote" onchange="carregarAnimaisDisponiveis()"><option value="">Todos</option></select>
+          </div>
+          <div class="fgroup"><label>Buscar brinco</label><input id="v_filtro_brinco" placeholder="Digite o brinco..." oninput="renderTabelaAnimaisDisponiveis()"></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="chkSelecionarTodos" onchange="alternarSelecaoTodos(this.checked)"></th>
+                <th>Brinco</th><th>Fazenda</th><th>Lote</th><th>Peso atual</th><th>Peso de saída (kg)</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaAnimaisDisponiveis"><tr class="empty-row"><td colspan="6">Selecione a aba "Cadastrar venda" pra carregar.</td></tr></tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;font-size:13px;color:#7aa3cc">
+          <b id="resumoSelecionados" style="color:#e2eaf4">0 animais selecionados</b> — peso total de saída: <b id="pesoTotalSelecionados" style="color:#e2eaf4">0 kg</b>
+        </div>
+      </div>
+    </div>
+
     <div class="card" id="cardParcelamento" style="display:none">
       <div class="cardh">Parcelamento (a receber)</div>
       <div class="cardb">
@@ -135,6 +166,8 @@ document.getElementById('mainContent').innerHTML = `
 let vendaEditandoId = null;
 let parcelasState = [];
 let vendaAtualParcelasId = null;
+let animaisDisponiveisCache = [];
+let animaisSelecionados = new Map(); // id -> { brinco, pesoSaida }
 
 // ---------- Navegação ----------
 function mostrarAba(aba) {
@@ -143,11 +176,16 @@ function mostrarAba(aba) {
   document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
   if (aba === 'lista') carregarVendas();
+  if (aba === 'cadastro' && !vendaEditandoId) {
+    carregarFiltrosFazendasVenda();
+    carregarAnimaisDisponiveis();
+  }
 }
 
 function limparFormulario() {
   vendaEditandoId = null;
   parcelasState = [];
+  animaisSelecionados = new Map();
   ['v_comprador','v_nota_fiscal','v_valor_total','v_frete_total','v_observacoes'].forEach(id => {
     document.getElementById(id).value = '';
   });
@@ -156,10 +194,15 @@ function limparFormulario() {
   document.getElementById('v_qtd_parcelas').value = 2;
   document.getElementById('v_intervalo_dias').value = 30;
   document.getElementById('v_primeiro_vencimento').value = '';
+  document.getElementById('v_filtro_fazenda').value = '';
+  document.getElementById('v_filtro_lote').innerHTML = '<option value="">Todos</option>';
+  document.getElementById('v_filtro_brinco').value = '';
+  document.getElementById('cardAnimaisVendidos').style.display = 'block';
   document.getElementById('cardParcelamento').style.display = 'none';
   document.getElementById('previaParcelas').innerHTML = '';
   document.getElementById('btnSalvarVenda').textContent = 'Cadastrar venda';
   document.getElementById('msgCadastro').className = 'msg';
+  carregarAnimaisDisponiveis();
 }
 
 function showMsg(elId, text, type) {
@@ -172,6 +215,120 @@ function showMsg(elId, text, type) {
 function alternarParcelamento() {
   const parcelado = document.getElementById('v_forma_recebimento').value === 'Parcelado';
   document.getElementById('cardParcelamento').style.display = (parcelado && !vendaEditandoId) ? 'block' : 'none';
+}
+
+// ---------- Seleção de animais vendidos ----------
+async function carregarFiltrosFazendasVenda() {
+  const sel = document.getElementById('v_filtro_fazenda');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+  sel.innerHTML = `<option value="">Todas</option>` +
+    (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+}
+
+async function carregarLotesFiltro(fazendaId) {
+  const sel = document.getElementById('v_filtro_lote');
+  if (!fazendaId) {
+    sel.innerHTML = `<option value="">Todos</option>`;
+    return;
+  }
+  const { data: lotes } = await supabaseClient.from('lotes').select('id, nome').eq('fazenda_id', fazendaId).order('nome');
+  sel.innerHTML = `<option value="">Todos</option>` +
+    (lotes || []).map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
+}
+
+async function carregarAnimaisDisponiveis() {
+  const fazendaId = document.getElementById('v_filtro_fazenda').value;
+  const loteId = document.getElementById('v_filtro_lote').value;
+
+  let query = supabaseClient.from('vw_animais_resumo').select('*').eq('status', 'ativo');
+  if (fazendaId) query = query.eq('fazenda_id', fazendaId);
+  if (loteId) query = query.eq('lote_id', loteId);
+
+  const { data: animais, error } = await query.order('brinco');
+
+  if (error) {
+    document.getElementById('tabelaAnimaisDisponiveis').innerHTML = `<tr class="empty-row"><td colspan="6">Erro: ${error.message}</td></tr>`;
+    return;
+  }
+
+  animaisDisponiveisCache = animais || [];
+  renderTabelaAnimaisDisponiveis();
+}
+
+function renderTabelaAnimaisDisponiveis() {
+  const busca = document.getElementById('v_filtro_brinco').value.trim().toLowerCase();
+  const lista = busca
+    ? animaisDisponiveisCache.filter(a => String(a.brinco).toLowerCase().includes(busca))
+    : animaisDisponiveisCache;
+
+  if (lista.length === 0) {
+    document.getElementById('tabelaAnimaisDisponiveis').innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum animal ativo encontrado com esse filtro.</td></tr>';
+    document.getElementById('chkSelecionarTodos').checked = false;
+    atualizarResumoSelecionados();
+    return;
+  }
+
+  document.getElementById('tabelaAnimaisDisponiveis').innerHTML = lista.map(a => {
+    const selecionado = animaisSelecionados.has(a.id);
+    const pesoDefault = animaisSelecionados.get(a.id)?.pesoSaida ?? a.peso_atual ?? a.peso_entrada ?? '';
+    return `
+      <tr>
+        <td><input type="checkbox" ${selecionado ? 'checked' : ''} onchange="toggleSelecaoAnimal('${a.id}','${a.brinco}', ${pesoDefault || 0}, this.checked)"></td>
+        <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+        <td>${a.fazenda_nome || '—'}</td>
+        <td>${a.lote_nome || '—'}</td>
+        <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+        <td><input type="number" step="0.01" value="${pesoDefault}" style="width:100px" onchange="atualizarPesoSaida('${a.id}', this.value)"></td>
+      </tr>
+    `;
+  }).join('');
+
+  const todosMarcados = lista.every(a => animaisSelecionados.has(a.id));
+  document.getElementById('chkSelecionarTodos').checked = todosMarcados;
+  atualizarResumoSelecionados();
+}
+
+function toggleSelecaoAnimal(id, brinco, pesoDefault, marcado) {
+  if (marcado) {
+    animaisSelecionados.set(id, { brinco, pesoSaida: pesoDefault || 0 });
+  } else {
+    animaisSelecionados.delete(id);
+  }
+  atualizarResumoSelecionados();
+}
+
+function atualizarPesoSaida(id, valor) {
+  const atual = animaisSelecionados.get(id);
+  if (atual) {
+    atual.pesoSaida = parseFloat(valor) || 0;
+    atualizarResumoSelecionados();
+  }
+}
+
+function alternarSelecaoTodos(marcarTodos) {
+  const busca = document.getElementById('v_filtro_brinco').value.trim().toLowerCase();
+  const lista = busca
+    ? animaisDisponiveisCache.filter(a => String(a.brinco).toLowerCase().includes(busca))
+    : animaisDisponiveisCache;
+
+  lista.forEach(a => {
+    if (marcarTodos) {
+      if (!animaisSelecionados.has(a.id)) {
+        animaisSelecionados.set(a.id, { brinco: a.brinco, pesoSaida: a.peso_atual ?? a.peso_entrada ?? 0 });
+      }
+    } else {
+      animaisSelecionados.delete(a.id);
+    }
+  });
+  renderTabelaAnimaisDisponiveis();
+}
+
+function atualizarResumoSelecionados() {
+  const qtd = animaisSelecionados.size;
+  let pesoTotal = 0;
+  animaisSelecionados.forEach(v => { pesoTotal += Number(v.pesoSaida) || 0; });
+  document.getElementById('resumoSelecionados').textContent = `${qtd} animal${qtd === 1 ? '' : 'is'} selecionado${qtd === 1 ? '' : 's'}`;
+  document.getElementById('pesoTotalSelecionados').textContent = `${pesoTotal.toLocaleString('pt-BR')} kg`;
 }
 
 // ---------- Geração de parcelas (preview editável) ----------
@@ -291,6 +448,7 @@ async function editarVenda(id) {
   document.getElementById('v_frete_total').value = v.frete_total || '';
   document.getElementById('v_forma_recebimento').value = v.forma_recebimento || '';
   document.getElementById('v_observacoes').value = v.observacoes || '';
+  document.getElementById('cardAnimaisVendidos').style.display = 'none';
   document.getElementById('cardParcelamento').style.display = 'none'; // parcelas de venda existente: gerenciar pelo modal na lista
   document.getElementById('btnSalvarVenda').textContent = 'Salvar alterações';
 }
@@ -322,6 +480,10 @@ async function salvarVenda() {
   if (!formaRecebimento) { showMsg('msgCadastro', 'Selecione a forma de recebimento.', 'error'); return; }
   if (formaRecebimento === 'Parcelado' && !vendaEditandoId && parcelasState.length === 0) {
     showMsg('msgCadastro', 'Clique em "Gerar / atualizar parcelas" antes de salvar.', 'error');
+    return;
+  }
+  if (!vendaEditandoId && animaisSelecionados.size === 0) {
+    showMsg('msgCadastro', 'Selecione pelo menos um animal vendido.', 'error');
     return;
   }
 
@@ -366,7 +528,38 @@ async function salvarVenda() {
       }
     }
 
+    // Atualiza os animais selecionados: marca como vendido, registra peso de saída
+    // e distribui o valor total proporcionalmente ao peso de cada um.
+    const pesoTotalSelecionado = [...animaisSelecionados.values()].reduce((s, v) => s + (Number(v.pesoSaida) || 0), 0);
+    let falhas = 0;
+
+    const atualizacoes = [...animaisSelecionados.entries()].map(([animalId, info]) => {
+      const pesoSaida = Number(info.pesoSaida) || 0;
+      const precoVenda = pesoTotalSelecionado > 0
+        ? Math.round((Number(valorTotal) * (pesoSaida / pesoTotalSelecionado)) * 100) / 100
+        : null;
+      return supabaseClient.from('animais').update({
+        status: 'vendido',
+        data_venda: dataVenda,
+        peso_saida: pesoSaida,
+        preco_venda: precoVenda,
+        comprador: payload.comprador,
+        venda_id: nova.id,
+      }).eq('id', animalId);
+    });
+
+    const resultados = await Promise.all(atualizacoes);
+    resultados.forEach(r => { if (r.error) falhas++; });
+
     btn.disabled = false;
+
+    if (falhas > 0) {
+      showMsg('msgCadastro', `Venda cadastrada, mas ${falhas} animal(is) não puderam ser atualizados. Verifique manualmente em Animais.`, 'error');
+      limparFormulario();
+      mostrarAba('lista');
+      return;
+    }
+
     showMsg('msgCadastro', 'Venda cadastrada com sucesso!', 'success');
   }
 
