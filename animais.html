@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -26,6 +27,7 @@ document.getElementById('mainContent').innerHTML = `
   <div class="subtoggle">
     <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de animais</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar animal</button>
+    <button class="stbtn" id="btnTabImportar" onclick="mostrarAba('importar')">Importar planilha</button>
   </div>
 
   <div id="abaLista">
@@ -160,6 +162,80 @@ document.getElementById('mainContent').innerHTML = `
     </div>
   </div>
 
+  <div id="abaImportar" style="display:none">
+    <div class="subtoggle">
+      <button class="stbtn active" id="btnSubImportarAnimais" onclick="mostrarSubImportar('animais')">Cadastro de animais</button>
+      <button class="stbtn" id="btnSubImportarPesagens" onclick="mostrarSubImportar('pesagens')">Pesagens</button>
+    </div>
+
+    <div id="subImportarAnimais">
+      <div class="card">
+        <div class="cardh">1. Baixe o modelo e preencha</div>
+        <div class="cardb">
+          <p style="font-size:13px;color:#aac4e0;margin-bottom:10px">
+            Use sempre o nome de Fazenda/Lote/Manga exatamente como estão cadastrados no sistema.
+            A planilha tem uma aba de instruções detalhadas.
+          </p>
+          <a class="btn btn-secondary" href="modelo-cadastro-animais.xlsx" download><i class="ti ti-download"></i> Baixar modelo de cadastro</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardh">2. Suba a planilha preenchida</div>
+        <div class="cardb">
+          <input type="file" id="arquivoAnimais" accept=".xlsx,.xls" style="margin-bottom:10px">
+          <div>
+            <button class="btn btn-primary" id="btnProcessarAnimais" onclick="processarPlanilhaAnimais()">Processar planilha</button>
+          </div>
+          <div id="msgImportAnimais" class="msg"></div>
+        </div>
+      </div>
+
+      <div class="card" id="cardResultadoAnimais" style="display:none">
+        <div class="cardh">Resultado da importação</div>
+        <div class="cardb table-wrap">
+          <table>
+            <thead><tr><th>Linha</th><th>Brinco</th><th>Status</th></tr></thead>
+            <tbody id="tabelaResultadoAnimais"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="subImportarPesagens" style="display:none">
+      <div class="card">
+        <div class="cardh">1. Baixe o modelo e preencha</div>
+        <div class="cardb">
+          <p style="font-size:13px;color:#aac4e0;margin-bottom:10px">
+            O brinco precisa ser exatamente igual ao já cadastrado no sistema. O GMD é recalculado automaticamente.
+          </p>
+          <a class="btn btn-secondary" href="modelo-pesagens.xlsx" download><i class="ti ti-download"></i> Baixar modelo de pesagens</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardh">2. Suba a planilha preenchida</div>
+        <div class="cardb">
+          <input type="file" id="arquivoPesagens" accept=".xlsx,.xls" style="margin-bottom:10px">
+          <div>
+            <button class="btn btn-primary" id="btnProcessarPesagens" onclick="processarPlanilhaPesagens()">Processar planilha</button>
+          </div>
+          <div id="msgImportPesagens" class="msg"></div>
+        </div>
+      </div>
+
+      <div class="card" id="cardResultadoPesagens" style="display:none">
+        <div class="cardh">Resultado da importação</div>
+        <div class="cardb table-wrap">
+          <table>
+            <thead><tr><th>Linha</th><th>Brinco</th><th>Status</th></tr></thead>
+            <tbody id="tabelaResultadoPesagens"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: registrar pesagem -->
   <div class="modal-overlay" id="modalPesagem" style="display:none">
     <div class="modal-box">
@@ -250,10 +326,19 @@ let acaoAnimalBrinco = null;
 function mostrarAba(aba) {
   document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('abaImportar').style.display = aba === 'importar' ? 'block' : 'none';
   document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  document.getElementById('btnTabImportar').classList.toggle('active', aba === 'importar');
   if (aba === 'lista') carregarAnimais();
   if (aba === 'cadastro') carregarSelectsCadastro();
+}
+
+function mostrarSubImportar(sub) {
+  document.getElementById('subImportarAnimais').style.display = sub === 'animais' ? 'block' : 'none';
+  document.getElementById('subImportarPesagens').style.display = sub === 'pesagens' ? 'block' : 'none';
+  document.getElementById('btnSubImportarAnimais').classList.toggle('active', sub === 'animais');
+  document.getElementById('btnSubImportarPesagens').classList.toggle('active', sub === 'pesagens');
 }
 
 function limparFormulario() {
@@ -695,6 +780,273 @@ async function salvarMorte() {
 
   fecharModal('modalMorte');
   carregarAnimais();
+}
+
+// ---------- Importação de planilhas ----------
+function normalizarTexto(s) {
+  return String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizarCabecalho(s) {
+  return normalizarTexto(s).replace(/[^a-z0-9]/g, '');
+}
+
+function excelDateParaISO(valor) {
+  if (valor === '' || valor === null || valor === undefined) return null;
+  if (valor instanceof Date) {
+    const ano = valor.getUTCFullYear();
+    const mes = String(valor.getUTCMonth() + 1).padStart(2, '0');
+    const dia = String(valor.getUTCDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+  }
+  if (typeof valor === 'number') {
+    const d = XLSX.SSF.parse_date_code(valor);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+  }
+  const texto = String(valor).trim();
+  let m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return null;
+}
+
+function lerArquivoComoLinhas(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+        if (matriz.length === 0) { resolve([]); return; }
+
+        const mapaColunas = {};
+        matriz[0].forEach((cabecalho, idx) => { mapaColunas[normalizarCabecalho(cabecalho)] = idx; });
+
+        const linhas = [];
+        for (let i = 1; i < matriz.length; i++) {
+          const linhaBruta = matriz[i];
+          const vazia = linhaBruta.every(v => v === '' || v === null || v === undefined);
+          if (vazia) continue;
+          const obj = { __linha: i + 1 };
+          Object.entries(mapaColunas).forEach(([chave, idx]) => { obj[chave] = linhaBruta[idx]; });
+          linhas.push(obj);
+        }
+        resolve(linhas);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function renderResultadoImportacao(tabelaId, cardId, resultados) {
+  document.getElementById(cardId).style.display = 'block';
+  document.getElementById(tabelaId).innerHTML = resultados.map(r => `
+    <tr>
+      <td>${r.linha}</td>
+      <td>#${r.brinco}</td>
+      <td>${r.status === 'ok'
+        ? `<span class="badge bg-success">OK</span> ${r.motivo}`
+        : `<span class="badge bg-danger">Erro</span> ${r.motivo}`}</td>
+    </tr>
+  `).join('');
+}
+
+async function processarPlanilhaAnimais() {
+  const file = document.getElementById('arquivoAnimais').files[0];
+  if (!file) { showMsg('msgImportAnimais', 'Selecione um arquivo .xlsx primeiro.', 'error'); return; }
+
+  const btn = document.getElementById('btnProcessarAnimais');
+  btn.disabled = true;
+  showMsg('msgImportAnimais', 'Lendo planilha...', 'success');
+
+  let linhas;
+  try {
+    linhas = await lerArquivoComoLinhas(file);
+  } catch (err) {
+    btn.disabled = false;
+    showMsg('msgImportAnimais', 'Erro ao ler o arquivo: ' + err.message, 'error');
+    return;
+  }
+
+  if (linhas.length === 0) {
+    btn.disabled = false;
+    showMsg('msgImportAnimais', 'A planilha não tem linhas de dados (ou só tem a linha de exemplo apagada).', 'error');
+    return;
+  }
+
+  const [{ data: fazendas }, { data: lotes }, { data: mangas }] = await Promise.all([
+    supabaseClient.from('fazendas').select('id, nome'),
+    supabaseClient.from('lotes').select('id, nome, fazenda_id'),
+    supabaseClient.from('mangas').select('id, numero, fazenda_id'),
+  ]);
+
+  const mapaFazendas = new Map((fazendas || []).map(f => [normalizarTexto(f.nome), f.id]));
+  const mapaLotes = new Map((lotes || []).map(l => [`${l.fazenda_id}|${normalizarTexto(l.nome)}`, l.id]));
+  const mapaMangas = new Map((mangas || []).map(m => [`${m.fazenda_id}|${normalizarTexto(m.numero)}`, m.id]));
+
+  const categoriasValidas = ['Bezerro', 'Garrote', 'Novilho', 'Boi', 'Vaca', 'Misto'];
+  const mapaCategorias = new Map(categoriasValidas.map(c => [normalizarTexto(c), c]));
+
+  const resultados = [];
+  const validos = [];
+
+  for (const linha of linhas) {
+    const brinco = String(linha.brinco || '').trim();
+    const erro = (msg) => resultados.push({ linha: linha.__linha, brinco: brinco || '—', status: 'erro', motivo: msg });
+
+    if (!brinco) { erro('Brinco em branco.'); continue; }
+
+    const sexoTexto = normalizarTexto(linha.sexo);
+    let sexo = null;
+    if (sexoTexto === 'macho') sexo = 'Macho';
+    else if (sexoTexto === 'femea') sexo = 'Fêmea';
+    if (!sexo) { erro('Sexo inválido (use Macho ou Fêmea).'); continue; }
+
+    const fazendaNome = String(linha.fazenda || '').trim();
+    if (!fazendaNome) { erro('Fazenda em branco.'); continue; }
+    const fazendaId = mapaFazendas.get(normalizarTexto(fazendaNome));
+    if (!fazendaId) { erro(`Fazenda "${fazendaNome}" não encontrada.`); continue; }
+
+    const dataEntrada = excelDateParaISO(linha.dataentrada);
+    if (!dataEntrada) { erro('Data de entrada inválida ou em branco.'); continue; }
+
+    const pesoEntrada = parseFloat(String(linha.pesoentrada).replace(',', '.'));
+    if (!pesoEntrada) { erro('Peso de entrada inválido ou em branco.'); continue; }
+
+    let loteId = null;
+    const loteNome = String(linha.lote || '').trim();
+    if (loteNome) {
+      loteId = mapaLotes.get(`${fazendaId}|${normalizarTexto(loteNome)}`);
+      if (!loteId) { erro(`Lote "${loteNome}" não encontrado nessa fazenda.`); continue; }
+    }
+
+    let mangaId = null;
+    const mangaNumero = String(linha.manga || '').trim();
+    if (mangaNumero) {
+      mangaId = mapaMangas.get(`${fazendaId}|${normalizarTexto(mangaNumero)}`);
+      if (!mangaId) { erro(`Manga "${mangaNumero}" não encontrada nessa fazenda.`); continue; }
+    }
+
+    let categoria = null;
+    const categoriaTexto = String(linha.categoria || '').trim();
+    if (categoriaTexto) {
+      categoria = mapaCategorias.get(normalizarTexto(categoriaTexto));
+      if (!categoria) { erro(`Categoria "${categoriaTexto}" inválida (use Bezerro, Garrote, Novilho, Boi, Vaca ou Misto).`); continue; }
+    }
+
+    const castradoTexto = normalizarTexto(linha.castrado);
+    const castrado = castradoTexto === 'sim' || castradoTexto === 'true' || castradoTexto === '1';
+
+    const payload = {
+      brinco, sexo, categoria,
+      raca: String(linha.raca || '').trim() || null,
+      pelagem: String(linha.pelagem || '').trim() || null,
+      marca: String(linha.marca || '').trim() || null,
+      castrado,
+      fazenda_id: fazendaId,
+      lote_id: loteId,
+      manga_id: mangaId,
+      data_nascimento: excelDateParaISO(linha.datanascimento),
+      data_desmame: excelDateParaISO(linha.datadesmame),
+      data_entrada: dataEntrada,
+      produtor_origem: String(linha.produtororigem || '').trim() || null,
+      peso_entrada: pesoEntrada,
+      preco_compra_kg: linha.precocomprakg ? parseFloat(String(linha.precocomprakg).replace(',', '.')) : null,
+      frete_compra: linha.fretecompra ? parseFloat(String(linha.fretecompra).replace(',', '.')) : 0,
+      observacoes: String(linha.observacoes || '').trim() || null,
+    };
+
+    validos.push({ linha: linha.__linha, brinco, payload });
+  }
+
+  for (const item of validos) {
+    const { error } = await supabaseClient.from('animais').insert(item.payload);
+    if (error) {
+      const motivo = error.code === '23505' ? 'Já existe um animal com esse brinco.' : error.message;
+      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo });
+    } else {
+      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'ok', motivo: 'Importado com sucesso.' });
+    }
+  }
+
+  resultados.sort((a, b) => a.linha - b.linha);
+  renderResultadoImportacao('tabelaResultadoAnimais', 'cardResultadoAnimais', resultados);
+
+  const sucesso = resultados.filter(r => r.status === 'ok').length;
+  btn.disabled = false;
+  showMsg('msgImportAnimais', `${sucesso} de ${resultados.length} linha(s) importada(s) com sucesso.`, sucesso === resultados.length ? 'success' : 'error');
+
+  if (sucesso > 0) carregarAnimais();
+}
+
+async function processarPlanilhaPesagens() {
+  const file = document.getElementById('arquivoPesagens').files[0];
+  if (!file) { showMsg('msgImportPesagens', 'Selecione um arquivo .xlsx primeiro.', 'error'); return; }
+
+  const btn = document.getElementById('btnProcessarPesagens');
+  btn.disabled = true;
+  showMsg('msgImportPesagens', 'Lendo planilha...', 'success');
+
+  let linhas;
+  try {
+    linhas = await lerArquivoComoLinhas(file);
+  } catch (err) {
+    btn.disabled = false;
+    showMsg('msgImportPesagens', 'Erro ao ler o arquivo: ' + err.message, 'error');
+    return;
+  }
+
+  if (linhas.length === 0) {
+    btn.disabled = false;
+    showMsg('msgImportPesagens', 'A planilha não tem linhas de dados (ou só tem a linha de exemplo apagada).', 'error');
+    return;
+  }
+
+  const { data: animais } = await supabaseClient.from('animais').select('id, brinco');
+  const mapaBrincos = new Map((animais || []).map(a => [normalizarTexto(a.brinco), a.id]));
+
+  const resultados = [];
+  const validos = [];
+
+  for (const linha of linhas) {
+    const brinco = String(linha.brinco || '').trim();
+    const erro = (msg) => resultados.push({ linha: linha.__linha, brinco: brinco || '—', status: 'erro', motivo: msg });
+
+    if (!brinco) { erro('Brinco em branco.'); continue; }
+
+    const animalId = mapaBrincos.get(normalizarTexto(brinco));
+    if (!animalId) { erro('Brinco não encontrado no cadastro de animais.'); continue; }
+
+    const dataPesagem = excelDateParaISO(linha.datapesagem);
+    if (!dataPesagem) { erro('Data de pesagem inválida ou em branco.'); continue; }
+
+    const peso = parseFloat(String(linha.peso).replace(',', '.'));
+    if (!peso) { erro('Peso inválido ou em branco.'); continue; }
+
+    validos.push({ linha: linha.__linha, brinco, payload: { animal_id: animalId, data_pesagem: dataPesagem, peso } });
+  }
+
+  for (const item of validos) {
+    const { error } = await supabaseClient.from('pesagens').insert(item.payload);
+    resultados.push({
+      linha: item.linha, brinco: item.brinco,
+      status: error ? 'erro' : 'ok',
+      motivo: error ? error.message : 'Importado com sucesso.',
+    });
+  }
+
+  resultados.sort((a, b) => a.linha - b.linha);
+  renderResultadoImportacao('tabelaResultadoPesagens', 'cardResultadoPesagens', resultados);
+
+  const sucesso = resultados.filter(r => r.status === 'ok').length;
+  btn.disabled = false;
+  showMsg('msgImportPesagens', `${sucesso} de ${resultados.length} linha(s) importada(s) com sucesso.`, sucesso === resultados.length ? 'success' : 'error');
 }
 
 // ---------- Modal genérico ----------
