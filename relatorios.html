@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -363,8 +363,18 @@ function exportarExcel() {
 function exportarPdf() {
   if (listaOrdenada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
 
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
+    return;
+  }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+  if (typeof doc.autoTable !== 'function') {
+    alert('A biblioteca de tabelas do PDF não carregou corretamente. Recarregue a página e tente novamente.');
+    return;
+  }
 
   doc.setFontSize(13);
   doc.text(document.getElementById('tituloRelatorio').textContent, 40, 30);
