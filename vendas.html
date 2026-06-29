@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -30,7 +32,18 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div id="abaLista">
+    <div class="toolbar">
+      <select id="filtroMesVenda" onchange="carregarFiltroDatasVenda(this.value); aplicarFiltrosVendas()"><option value="">Todos os meses</option></select>
+      <select id="filtroDataVenda" onchange="aplicarFiltrosVendas()"><option value="">Todas as datas</option></select>
+    </div>
     <div class="card">
+      <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>Vendas</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="exportarVendasExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+          <button class="btn btn-secondary" onclick="exportarVendasPdf()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        </div>
+      </div>
       <div class="cardb table-wrap">
         <table>
           <thead>
@@ -96,6 +109,7 @@ document.getElementById('mainContent').innerHTML = `
           <input type="file" id="arquivoVenda" accept=".xlsx,.xls" style="font-size:12px">
           <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px" onclick="processarPlanilhaVenda()"><i class="ti ti-upload"></i> Importar</button>
         </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px"><i class="ti ti-info-circle"></i> Importar só marca os animais na seleção abaixo — a venda só é registrada quando você clicar em "Cadastrar venda", no final do formulário.</div>
         <div id="msgImportVenda" class="msg"></div>
         <div class="table-wrap">
           <table>
@@ -175,7 +189,34 @@ let vendaEditandoId = null;
 let parcelasState = [];
 let vendaAtualParcelasId = null;
 let animaisDisponiveisCache = [];
-let animaisSelecionados = new Map(); // id -> { brinco, pesoSaida, valorVendido }
+let animaisSelecionados = new Map(); // id -> { brinco, pesoSaida, valorVendido, comprador, dataVenda, observacoes }
+let vendasCache = [];
+let logoBase64 = null;
+
+function carregarLogoBase64() {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (e) {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'logo-agrolima.png';
+  });
+}
+
+function mesLabel(chaveAnoMes) {
+  const [ano, mes] = chaveAnoMes.split('-');
+  const nomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return `${nomes[parseInt(mes, 10) - 1]}/${ano}`;
+}
 
 // ---------- Navegação ----------
 function mostrarAba(aba) {
@@ -416,75 +457,85 @@ function lerArquivoComoLinhas(file) {
 }
 
 async function processarPlanilhaVenda() {
-  const file = document.getElementById('arquivoVenda').files[0];
-  if (!file) { showMsg('msgImportVenda', 'Selecione um arquivo .xlsx primeiro.', 'error'); return; }
-
-  let linhas;
   try {
-    linhas = await lerArquivoComoLinhas(file);
-  } catch (err) {
-    showMsg('msgImportVenda', 'Erro ao ler o arquivo: ' + err.message, 'error');
-    return;
-  }
+    const file = document.getElementById('arquivoVenda').files[0];
+    if (!file) { showMsg('msgImportVenda', 'Selecione um arquivo .xlsx primeiro.', 'error'); return; }
 
-  if (linhas.length === 0) {
-    showMsg('msgImportVenda', 'A planilha não tem linhas de dados.', 'error');
-    return;
-  }
+    let linhas;
+    try {
+      linhas = await lerArquivoComoLinhas(file);
+    } catch (err) {
+      showMsg('msgImportVenda', 'Erro ao ler o arquivo: ' + err.message, 'error');
+      return;
+    }
 
-  const brincosPlanilha = linhas.map(l => String(l.brinco || '').trim()).filter(Boolean);
-  if (brincosPlanilha.length === 0) {
-    showMsg('msgImportVenda', 'Nenhum brinco válido encontrado na planilha.', 'error');
-    return;
-  }
+    if (linhas.length === 0) {
+      showMsg('msgImportVenda', 'A planilha não tem linhas de dados.', 'error');
+      return;
+    }
 
-  const { data: encontrados, error } = await supabaseClient
-    .from('vw_animais_resumo')
-    .select('id, brinco, status, peso_atual')
-    .in('brinco', brincosPlanilha);
+    const brincosPlanilha = linhas.map(l => String(l.brinco || '').trim()).filter(Boolean);
+    if (brincosPlanilha.length === 0) {
+      showMsg('msgImportVenda', 'Nenhum brinco válido encontrado na planilha.', 'error');
+      return;
+    }
 
-  if (error) {
-    showMsg('msgImportVenda', 'Erro ao consultar animais: ' + error.message, 'error');
-    return;
-  }
+    const { data: encontrados, error } = await supabaseClient
+      .from('vw_animais_resumo')
+      .select('id, brinco, status, peso_atual')
+      .in('brinco', brincosPlanilha);
 
-  const mapaEncontrados = new Map((encontrados || []).map(a => [normalizarTexto(a.brinco), a]));
-  let adicionados = 0;
-  const semSucesso = [];
+    if (error) {
+      showMsg('msgImportVenda', 'Erro ao consultar animais: ' + error.message, 'error');
+      return;
+    }
 
-  linhas.forEach(linha => {
-    const brinco = String(linha.brinco || '').trim();
-    if (!brinco) return;
+    const mapaEncontrados = new Map((encontrados || []).map(a => [normalizarTexto(a.brinco), a]));
+    let adicionados = 0;
+    const semSucesso = [];
 
-    const animal = mapaEncontrados.get(normalizarTexto(brinco));
-    if (!animal) { semSucesso.push(`${brinco} (não encontrado)`); return; }
-    if (animal.status !== 'ativo') { semSucesso.push(`${brinco} (não está ativo)`); return; }
+    linhas.forEach(linha => {
+      const brinco = String(linha.brinco || '').trim();
+      if (!brinco) return;
 
-    const pesoSaida = parseFloat(String(linha.pesodesaida ?? '').replace(',', '.')) || Number(animal.peso_atual) || 0;
-    const valorTexto = String(linha.valorvendido ?? '').trim();
-    const valorVendido = valorTexto ? (parseFloat(valorTexto.replace(',', '.')) || null) : null;
-    const compradorLinha = String(linha.comprador ?? '').trim() || null;
-    const dataVendaLinha = excelDateParaISO(linha.datadavenda ?? linha.dataventa ?? '');
-    const observacoesLinha = String(linha.observacoes ?? '').trim() || null;
-    animaisSelecionados.set(animal.id, {
-      brinco: animal.brinco, pesoSaida, valorVendido,
-      comprador: compradorLinha, dataVenda: dataVendaLinha, observacoes: observacoesLinha,
+      const animal = mapaEncontrados.get(normalizarTexto(brinco));
+      if (!animal) { semSucesso.push(`${brinco} (não encontrado)`); return; }
+      if (animal.status !== 'ativo') { semSucesso.push(`${brinco} (não está ativo)`); return; }
+
+      const pesoSaida = parseFloat(String(linha.pesodesaida ?? '').replace(',', '.')) || Number(animal.peso_atual) || 0;
+      const valorTexto = String(linha.valorvendido ?? '').trim();
+      const valorVendido = valorTexto ? (parseFloat(valorTexto.replace(',', '.')) || null) : null;
+      const compradorLinha = String(linha.comprador ?? '').trim() || null;
+      const dataVendaLinha = excelDateParaISO(linha.datadavenda ?? linha.dataventa ?? '');
+      const observacoesLinha = String(linha.observacoes ?? '').trim() || null;
+      animaisSelecionados.set(animal.id, {
+        brinco: animal.brinco, pesoSaida, valorVendido,
+        comprador: compradorLinha, dataVenda: dataVendaLinha, observacoes: observacoesLinha,
+      });
+      adicionados++;
     });
-    adicionados++;
-  });
 
-  // Limpa os filtros pra trazer todos os animais ativos à vista, com os importados já marcados
-  document.getElementById('v_filtro_fazenda').value = '';
-  document.getElementById('v_filtro_lote').innerHTML = '<option value="">Todos</option>';
-  document.getElementById('v_filtro_brinco').value = '';
-  await carregarAnimaisDisponiveis();
+    if (adicionados === 0 && semSucesso.length === 0) {
+      showMsg('msgImportVenda', 'Nenhuma linha válida encontrada na planilha.', 'error');
+      return;
+    }
 
-  const resumo = semSucesso.length > 0
-    ? `${adicionados} animal(is) adicionado(s) à seleção. ${semSucesso.length} linha(s) com problema: ${semSucesso.join(', ')}.`
-    : `${adicionados} animal(is) adicionado(s) à seleção com sucesso!`;
-  showMsg('msgImportVenda', resumo, semSucesso.length > 0 ? 'error' : 'success');
+    // Limpa os filtros pra trazer todos os animais ativos à vista, com os importados já marcados
+    document.getElementById('v_filtro_fazenda').value = '';
+    document.getElementById('v_filtro_lote').innerHTML = '<option value="">Todos</option>';
+    document.getElementById('v_filtro_brinco').value = '';
+    await carregarAnimaisDisponiveis();
 
-  document.getElementById('arquivoVenda').value = '';
+    const aviso = adicionados > 0 ? ' Agora preencha os dados da venda abaixo e clique em "Cadastrar venda" pra confirmar.' : '';
+    const resumo = semSucesso.length > 0
+      ? `${adicionados} animal(is) adicionado(s) à seleção. ${semSucesso.length} linha(s) com problema: ${semSucesso.join(', ')}.${aviso}`
+      : `${adicionados} animal(is) adicionado(s) à seleção com sucesso!${aviso}`;
+    showMsg('msgImportVenda', resumo, semSucesso.length > 0 ? 'error' : 'success');
+
+    document.getElementById('arquivoVenda').value = '';
+  } catch (erroInesperado) {
+    showMsg('msgImportVenda', 'Erro inesperado ao importar: ' + erroInesperado.message, 'error');
+  }
 }
 
 // ---------- Geração de parcelas (preview editável) ----------
@@ -546,10 +597,59 @@ async function carregarVendas() {
     return;
   }
 
+  vendasCache = vendas || [];
+  carregarFiltroMesesVenda();
+  carregarFiltroDatasVenda(document.getElementById('filtroMesVenda').value);
+  aplicarFiltrosVendas();
+}
+
+function carregarFiltroMesesVenda() {
+  const sel = document.getElementById('filtroMesVenda');
+  const valorAtual = sel.value;
+
+  const chaves = new Set();
+  vendasCache.forEach(v => { if (v.data_venda) chaves.add(v.data_venda.slice(0, 7)); });
+
+  const ordenadas = [...chaves].sort().reverse();
+  sel.innerHTML = `<option value="">Todos os meses</option>` +
+    ordenadas.map(c => `<option value="${c}">${mesLabel(c)}</option>`).join('');
+
+  if (valorAtual) sel.value = valorAtual;
+}
+
+function carregarFiltroDatasVenda(mesSelecionado) {
+  const sel = document.getElementById('filtroDataVenda');
+
+  const datas = new Set();
+  vendasCache.forEach(v => {
+    if (v.data_venda && (!mesSelecionado || v.data_venda.slice(0, 7) === mesSelecionado)) {
+      datas.add(v.data_venda);
+    }
+  });
+
+  const ordenadas = [...datas].sort().reverse();
+  sel.innerHTML = `<option value="">Todas as datas</option>` +
+    ordenadas.map(d => `<option value="${d}">${new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')}</option>`).join('');
+}
+
+function aplicarFiltrosVendas() {
+  const mes = document.getElementById('filtroMesVenda').value;
+  const data = document.getElementById('filtroDataVenda').value;
+
+  const lista = vendasCache.filter(v => {
+    if (mes && (!v.data_venda || v.data_venda.slice(0, 7) !== mes)) return false;
+    if (data && v.data_venda !== data) return false;
+    return true;
+  });
+
+  renderTabelaVendas(lista);
+}
+
+function renderTabelaVendas(vendas) {
   document.getElementById('totalVendas').textContent = `${vendas.length} venda${vendas.length === 1 ? '' : 's'} registrada${vendas.length === 1 ? '' : 's'}`;
 
   if (vendas.length === 0) {
-    document.getElementById('tabelaVendas').innerHTML = '<tr class="empty-row"><td colspan="10">Nenhuma venda cadastrada ainda.</td></tr>';
+    document.getElementById('tabelaVendas').innerHTML = '<tr class="empty-row"><td colspan="10">Nenhuma venda encontrada com esse filtro.</td></tr>';
     return;
   }
 
@@ -587,6 +687,104 @@ async function carregarVendas() {
       </tr>
     `;
   }).join('');
+}
+
+// ---------- Exportação da lista de vendas ----------
+function listaVendasFiltradaAtual() {
+  const mes = document.getElementById('filtroMesVenda').value;
+  const data = document.getElementById('filtroDataVenda').value;
+  return vendasCache.filter(v => {
+    if (mes && (!v.data_venda || v.data_venda.slice(0, 7) !== mes)) return false;
+    if (data && v.data_venda !== data) return false;
+    return true;
+  });
+}
+
+function exportarVendasExcel() {
+  const lista = listaVendasFiltradaAtual();
+  if (lista.length === 0) { alert('Não há vendas para exportar com esse filtro.'); return; }
+
+  const linhas = lista.map(v => ({
+    'Data': new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR'),
+    'Comprador': v.comprador || '',
+    'Nota Fiscal': v.nota_fiscal || '',
+    'Valor Total': v.valor_total ?? '',
+    'Animais': v.qtd_animais || 0,
+    'Peso Total (kg)': v.peso_total_saida ?? 0,
+    'Lucro Bruto': v.lucro_bruto ?? 0,
+    'Forma de Recebimento': v.forma_recebimento || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  ws['!cols'] = [{wch:12},{wch:20},{wch:12},{wch:13},{wch:9},{wch:14},{wch:13},{wch:16}];
+  Object.keys(ws).forEach(ref => {
+    if (ref[0] === '!') return;
+    if (!ws[ref].s) ws[ref].s = {};
+    ws[ref].s.alignment = { horizontal: 'center' };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Vendas');
+  XLSX.writeFile(wb, `vendas-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportarVendasPdf() {
+  const lista = listaVendasFiltradaAtual();
+  if (lista.length === 0) { alert('Não há vendas para exportar com esse filtro.'); return; }
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+  if (typeof doc.autoTable !== 'function') {
+    alert('A biblioteca de tabelas do PDF não carregou corretamente. Recarregue a página e tente novamente.');
+    return;
+  }
+
+  const selMes = document.getElementById('filtroMesVenda');
+  const selData = document.getElementById('filtroDataVenda');
+  const periodo = selData.value
+    ? new Date(selData.value + 'T00:00:00').toLocaleDateString('pt-BR')
+    : (selMes.value ? mesLabel(selMes.value).toUpperCase() : new Date().toLocaleDateString('pt-BR'));
+  const titulo = `RELATÓRIO DE VENDAS - ${periodo}`;
+
+  doc.setFontSize(13);
+  if (logoBase64) {
+    try { doc.addImage(logoBase64, 'PNG', 40, 12, 26, 26); } catch (e) { /* segue sem a logo se der erro */ }
+    doc.text(titulo, 75, 30);
+  } else {
+    doc.text(titulo, 40, 30);
+  }
+
+  const linhas = lista.map(v => [
+    new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR'),
+    v.comprador || '—',
+    v.nota_fiscal || '—',
+    v.valor_total !== null ? Number(v.valor_total).toLocaleString('pt-BR') : '—',
+    v.qtd_animais || 0,
+    Number(v.peso_total_saida || 0).toLocaleString('pt-BR'),
+    Number(v.lucro_bruto || 0).toLocaleString('pt-BR'),
+    v.forma_recebimento || '—',
+  ]);
+
+  const valorTotalGeral = lista.reduce((s, v) => s + (Number(v.valor_total) || 0), 0);
+  const lucroTotalGeral = lista.reduce((s, v) => s + (Number(v.lucro_bruto) || 0), 0);
+
+  doc.autoTable({
+    startY: 45,
+    head: [['Data', 'Comprador', 'NF', 'Valor Total', 'Animais', 'Peso Total', 'Lucro Bruto', 'Recebimento']],
+    body: linhas,
+    foot: [['', '', '', valorTotalGeral.toLocaleString('pt-BR'), '', '', lucroTotalGeral.toLocaleString('pt-BR'), 'TOTAIS']],
+    theme: 'grid',
+    styles: { fontSize: 8, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold', halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+  });
+
+  doc.save(`vendas-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 // ---------- CRUD venda ----------
@@ -842,6 +1040,7 @@ function fecharModal(modalId) {
   showUserEmail();
   document.getElementById('v_data_venda').value = new Date().toISOString().slice(0, 10);
   carregarVendas();
+  logoBase64 = await carregarLogoBase64();
 })();
 </script>
 
