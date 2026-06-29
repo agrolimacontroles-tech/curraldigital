@@ -665,12 +665,16 @@ async function abrirModalPesagem(animalId, brinco) {
   document.getElementById('p_data_pesagem').value = new Date().toISOString().slice(0, 10);
   document.getElementById('p_peso').value = '';
   document.getElementById('msgPesagem').className = 'msg';
-  document.getElementById('historicoPesagens').innerHTML = 'Carregando histórico...';
   document.getElementById('modalPesagem').style.display = 'flex';
+  await carregarHistoricoPesagens(animalId);
+}
+
+async function carregarHistoricoPesagens(animalId) {
+  document.getElementById('historicoPesagens').innerHTML = 'Carregando histórico...';
 
   const { data: historico } = await supabaseClient
     .from('pesagens')
-    .select('data_pesagem, peso, gmd_periodo')
+    .select('id, data_pesagem, peso, gmd_periodo')
     .eq('animal_id', animalId)
     .order('data_pesagem', { ascending: false })
     .limit(5);
@@ -688,10 +692,24 @@ async function abrirModalPesagem(animalId, brinco) {
           <td>${new Date(h.data_pesagem + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
           <td>${Number(h.peso).toLocaleString('pt-BR')} kg</td>
           <td>${h.gmd_periodo !== null ? Number(h.gmd_periodo).toFixed(2) + ' kg/d' : '—'}</td>
+          <td><button class="btn btn-danger" style="padding:2px 7px" title="Excluir essa pesagem" onclick="excluirPesagemHistorico('${h.id}','${animalId}')"><i class="ti ti-trash"></i></button></td>
         </tr>
       `).join('')}
     </table>
   `;
+}
+
+async function excluirPesagemHistorico(pesagemId, animalId) {
+  if (!confirm('Excluir essa pesagem? O GMD desse animal será recalculado automaticamente sem ela.')) return;
+
+  const { error } = await supabaseClient.from('pesagens').delete().eq('id', pesagemId);
+  if (error) {
+    showMsg('msgPesagem', 'Erro ao excluir: ' + error.message, 'error');
+    return;
+  }
+
+  await carregarHistoricoPesagens(animalId);
+  carregarAnimais();
 }
 
 async function salvarPesagem() {
