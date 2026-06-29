@@ -94,14 +94,14 @@ async function carregarPainel() {
       <div class="cardh">Animais por fazenda</div>
       <div class="cardb">
         ${Object.entries(porFazenda).length === 0
-          ? '<p style="color:#3d6080;font-size:13px">Nenhum animal cadastrado ainda.</p>'
+          ? '<p style="color:var(--text-dim);font-size:13px">Nenhum animal cadastrado ainda.</p>'
           : Object.entries(porFazenda).map(([nome, qtd]) => `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <span style="font-size:12px;color:#7aa3cc;min-width:90px">${nome}</span>
-              <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
-                <div style="height:100%;border-radius:3px;width:${qtd / maxFazenda * 100}%;background:#1a4a8a"></div>
+              <span style="font-size:12px;color:var(--text-soft);min-width:90px">${nome}</span>
+              <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+                <div style="height:100%;border-radius:3px;width:${qtd / maxFazenda * 100}%;background:var(--accent-bg)"></div>
               </div>
-              <span style="font-size:12px;color:#e2eaf4;min-width:24px;text-align:right">${qtd}</span>
+              <span style="font-size:12px;color:var(--text);min-width:24px;text-align:right">${qtd}</span>
             </div>
           `).join('')}
       </div>
@@ -110,14 +110,14 @@ async function carregarPainel() {
       <div class="cardh">Ocupação das mangas</div>
       <div class="cardb">
         ${(mangas || []).length === 0
-          ? '<p style="color:#3d6080;font-size:13px">Nenhuma manga cadastrada ainda.</p>'
+          ? '<p style="color:var(--text-dim);font-size:13px">Nenhuma manga cadastrada ainda.</p>'
           : mangas.map(m => `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <span style="font-size:12px;color:#7aa3cc;min-width:90px">Manga ${m.numero}</span>
-              <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
-                <div style="height:100%;border-radius:3px;width:${m.percentual_ocupacao || 0}%;background:#f0b840"></div>
+              <span style="font-size:12px;color:var(--text-soft);min-width:90px">Manga ${m.numero}</span>
+              <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+                <div style="height:100%;border-radius:3px;width:${m.percentual_ocupacao || 0}%;background:var(--warning)"></div>
               </div>
-              <span style="font-size:12px;color:#e2eaf4;min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
+              <span style="font-size:12px;color:var(--text);min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
             </div>
           `).join('')}
       </div>
@@ -133,7 +133,7 @@ async function carregarPainel() {
     ? '<tr class="empty-row"><td colspan="6">Nenhum animal cadastrado ainda. <a href="animais.html">Cadastrar o primeiro animal →</a></td></tr>'
     : recentes.map(a => `
       <tr>
-        <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+        <td><b style="color:var(--text)">#${a.brinco}</b></td>
         <td>${a.fazenda_nome || '—'}</td>
         <td>${a.lote_nome || '—'}</td>
         <td>${Number(a.peso_atual).toLocaleString('pt-BR')} kg</td>

@@ -158,7 +158,7 @@ async function carregarMangas() {
 
     return `
       <tr>
-        <td><b style="color:#e2eaf4">Manga ${m.numero}</b></td>
+        <td><b style="color:var(--text)">Manga ${m.numero}</b></td>
         <td>${m.fazenda_nome || '—'}</td>
         <td>${tipoMap[m.id] || '—'}</td>
         <td>${m.capacidade}</td>

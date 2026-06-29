@@ -30,6 +30,7 @@
   --warning-bg: #3a2a10;
   --info: #4a9eff;
   --info-bg: #0d1e35;
+  --track-bg: #0a1628;
   --modal-overlay: rgba(5, 10, 20, 0.7);
 }
 
@@ -61,6 +62,7 @@
   --warning-bg: #fcf0db;
   --info: #1a6fe0;
   --info-bg: #eaf2fd;
+  --track-bg: #e3eaf4;
   --modal-overlay: rgba(20, 30, 45, 0.45);
 }
 
@@ -127,6 +129,9 @@ a { color: var(--accent); text-decoration: none; }
 .sitem i { font-size: 18px; width: 18px; flex-shrink: 0; }
 .sitem:hover { background: var(--bg-hover); color: var(--text); }
 .sitem.active { background: var(--accent-active-bg); color: var(--accent); border-left: 2px solid var(--accent); }
+
+.sidebar.collapsed .sitem { justify-content: center; padding: 10px 0; }
+.sidebar.collapsed .sitem span { display: none; }
 
 .main { flex: 1; padding: 1.5rem; overflow-x: auto; }
 

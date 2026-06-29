@@ -140,7 +140,7 @@ async function carregarFazendas() {
 
   document.getElementById('tabelaFazendas').innerHTML = fazendas.map(f => `
     <tr>
-      <td><b style="color:#e2eaf4">${f.nome}</b></td>
+      <td><b style="color:var(--text)">${f.nome}</b></td>
       <td>${f.proprietario || '—'}</td>
       <td>${f.municipio ? f.municipio + (f.estado ? '/' + f.estado : '') : '—'}</td>
       <td>${f.atividade ? `<span class="badge bg-info">${f.atividade}</span>` : '—'}</td>

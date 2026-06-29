@@ -100,8 +100,8 @@ document.getElementById('mainContent').innerHTML = `
             <tbody id="tabelaAnimaisDisponiveis"><tr class="empty-row"><td colspan="6">Selecione a aba "Cadastrar venda" pra carregar.</td></tr></tbody>
           </table>
         </div>
-        <div style="margin-top:10px;font-size:13px;color:#7aa3cc">
-          <b id="resumoSelecionados" style="color:#e2eaf4">0 animais selecionados</b> — peso total de saída: <b id="pesoTotalSelecionados" style="color:#e2eaf4">0 kg</b>
+        <div style="margin-top:10px;font-size:13px;color:var(--text-soft)">
+          <b id="resumoSelecionados" style="color:var(--text)">0 animais selecionados</b> — peso total de saída: <b id="pesoTotalSelecionados" style="color:var(--text)">0 kg</b>
         </div>
       </div>
     </div>
@@ -274,7 +274,7 @@ function renderTabelaAnimaisDisponiveis() {
     return `
       <tr>
         <td><input type="checkbox" ${selecionado ? 'checked' : ''} onchange="toggleSelecaoAnimal('${a.id}','${a.brinco}', ${pesoDefault || 0}, this.checked)"></td>
-        <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
+        <td><b style="color:var(--text)">#${a.brinco}</b></td>
         <td>${a.fazenda_nome || '—'}</td>
         <td>${a.lote_nome || '—'}</td>
         <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
@@ -406,7 +406,7 @@ async function carregarVendas() {
       else situacao = '<span class="badge bg-danger">A receber</span>';
     }
 
-    const lucroCor = v.lucro_bruto >= 0 ? '#4dd4a0' : '#f07070';
+    const lucroCor = v.lucro_bruto >= 0 ? 'var(--success)' : 'var(--danger)';
 
     const acaoParcelas = v.forma_recebimento === 'Parcelado' ? `
       <button class="btn btn-secondary" style="padding:4px 10px" title="Gerenciar parcelas" onclick="abrirModalParcelas('${v.id}','${(v.comprador || 'venda').replace(/'/g, "\\'")}')"><i class="ti ti-calendar-stats"></i></button>
@@ -415,7 +415,7 @@ async function carregarVendas() {
     return `
       <tr>
         <td>${new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-        <td><b style="color:#e2eaf4">${v.comprador || '—'}</b></td>
+        <td><b style="color:var(--text)">${v.comprador || '—'}</b></td>
         <td>${v.nota_fiscal || '—'}</td>
         <td>${v.valor_total !== null ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
         <td>${v.qtd_animais || 0}</td>

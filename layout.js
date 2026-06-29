@@ -20,16 +20,17 @@ const MENU_ITEMS = [
 
 function renderTopbarSidebar(activePage) {
   const itemsHtml = MENU_ITEMS.map(item => `
-    <button class="sitem ${item.page === activePage ? 'active' : ''}" onclick="location.href='${item.page}.html'">
+    <button class="sitem ${item.page === activePage ? 'active' : ''}" title="${item.label}" onclick="location.href='${item.page}.html'">
       <i class="ti ${item.icon}"></i><span>${item.label}</span>
     </button>
   `).join('');
 
   const temaAtual = document.documentElement.getAttribute('data-theme') || 'dark';
+  const sidebarColapsado = localStorage.getItem('curraldigital-sidebar') === 'collapsed';
 
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="topbar">
-      <button class="menubtn" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
+      <button class="menubtn" onclick="toggleSidebar()" title="Minimizar/expandir menu"><i class="ti ti-menu-2"></i></button>
       <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
       <div class="brand"><i class="ti ti-cow"></i> CurralDigital</div>
       <div class="spacer"></div>
@@ -42,7 +43,7 @@ function renderTopbarSidebar(activePage) {
       </div>
     </div>
     <div class="body-layout">
-      <div class="sidebar" id="sidebar">
+      <div class="sidebar ${sidebarColapsado ? 'collapsed' : ''}" id="sidebar">
         <div class="snav">${itemsHtml}</div>
       </div>
       <div class="main" id="mainContent"></div>
@@ -60,7 +61,8 @@ function alternarTema() {
 }
 
 function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('collapsed');
+  const colapsado = document.getElementById('sidebar').classList.toggle('collapsed');
+  localStorage.setItem('curraldigital-sidebar', colapsado ? 'collapsed' : 'expanded');
 }
 
 async function showUserEmail() {

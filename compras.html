@@ -257,7 +257,7 @@ async function carregarCompras() {
     return `
       <tr>
         <td>${new Date(c.data_compra + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-        <td><b style="color:#e2eaf4">${c.vendedor || '—'}</b></td>
+        <td><b style="color:var(--text)">${c.vendedor || '—'}</b></td>
         <td>${c.nota_fiscal || '—'}</td>
         <td>${c.valor_total !== null ? 'R$ ' + Number(c.valor_total).toLocaleString('pt-BR') : '—'}</td>
         <td>${c.frete_total ? 'R$ ' + Number(c.frete_total).toLocaleString('pt-BR') : '—'}</td>

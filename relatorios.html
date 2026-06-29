@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js"></script>
 </head>
 <body>
 
@@ -19,12 +22,13 @@ document.getElementById('mainContent').innerHTML = `
   <div class="pagehead">
     <div>
       <div class="pagetitle">Relatórios</div>
-      <div class="pagesub">Desempenho zootécnico — peso e GMD por fazenda e lote</div>
+      <div class="pagesub">Desempenho zootécnico — peso e GMD por fazenda, manga e lote</div>
     </div>
   </div>
 
   <div class="toolbar">
-    <select id="filtroFazenda" onchange="carregarLotesFiltro(this.value); aplicarFiltros()"><option value="">Todas as fazendas</option></select>
+    <select id="filtroFazenda" onchange="carregarMangasELotesFiltro(this.value); aplicarFiltros()"><option value="">Todas as fazendas</option></select>
+    <select id="filtroManga" onchange="aplicarFiltros()"><option value="">Todas as mangas</option></select>
     <select id="filtroLote" onchange="aplicarFiltros()"><option value="">Todos os lotes</option></select>
     <select id="filtroCategoria" onchange="aplicarFiltros()">
       <option value="">Todas as categorias</option>
@@ -45,8 +49,7 @@ document.getElementById('mainContent').innerHTML = `
       <option value="vendido">Vendidos</option>
       <option value="morto">Mortos</option>
     </select>
-    <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:#0a1628;border:0.5px solid #1e3452;border-radius:7px;padding:7px 11px;color:#e2eaf4;font-size:12px;min-width:160px">
-    <button class="btn btn-secondary" onclick="exportarCsv()"><i class="ti ti-download"></i> Exportar CSV</button>
+    <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
   </div>
 
   <div class="metrics" id="metricas">
@@ -56,25 +59,35 @@ document.getElementById('mainContent').innerHTML = `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
 
   <div class="card">
-    <div class="cardh">Ranking detalhado <span style="color:#3d6080;font-weight:400">(clique no cabeçalho pra ordenar)</span></div>
+    <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span id="tituloRelatorio">RELATÓRIO GMD</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+        <button class="btn btn-secondary" onclick="exportarPdf()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+      </div>
+    </div>
     <div class="cardb table-wrap">
       <table>
         <thead>
           <tr>
-            <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
             <th>Fazenda</th>
-            <th>Lote</th>
-            <th>Categoria</th>
+            <th>Manga</th>
+            <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
+            <th>Sexo</th>
             <th style="cursor:pointer" onclick="ordenarPor('peso_entrada')">Peso entrada</th>
-            <th style="cursor:pointer" onclick="ordenarPor('peso_atual')">Peso atual</th>
-            <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho total</th>
-            <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">GMD</th>
-            <th style="cursor:pointer" onclick="ordenarPor('dias_no_ciclo')">Dias no ciclo</th>
+            <th style="cursor:pointer" onclick="ordenarPor('peso_anterior')">Peso anterior</th>
+            <th>Data peso anterior</th>
+            <th style="cursor:pointer" onclick="ordenarPor('dias_entre_pesagens')">Dias entre pesagens</th>
+            <th style="cursor:pointer" onclick="ordenarPor('peso_atual')">Peso na data</th>
+            <th>Data último peso</th>
+            <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho</th>
+            <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">Último GMD</th>
           </tr>
         </thead>
         <tbody id="tabelaRanking">
-          <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
+          <tr class="empty-row"><td colspan="12"><span class="spinner"></span> Carregando...</td></tr>
         </tbody>
+        <tfoot id="rodapeRelatorio"></tfoot>
       </table>
     </div>
   </div>
@@ -82,9 +95,11 @@ document.getElementById('mainContent').innerHTML = `
 
 let animaisCache = [];
 let listaFiltrada = [];
+let listaOrdenada = [];
 let sortField = 'gmd_atual';
 let sortDir = 'desc';
 
+// ---------- Filtros (fazenda → manga + lote em cascata) ----------
 async function carregarFiltrosFazenda() {
   const sel = document.getElementById('filtroFazenda');
   const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
@@ -92,31 +107,74 @@ async function carregarFiltrosFazenda() {
     (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
 }
 
-async function carregarLotesFiltro(fazendaId) {
-  const sel = document.getElementById('filtroLote');
+async function carregarMangasELotesFiltro(fazendaId) {
+  const selManga = document.getElementById('filtroManga');
+  const selLote = document.getElementById('filtroLote');
+
   if (!fazendaId) {
-    sel.innerHTML = `<option value="">Todos os lotes</option>`;
+    selManga.innerHTML = `<option value="">Todas as mangas</option>`;
+    selLote.innerHTML = `<option value="">Todos os lotes</option>`;
     return;
   }
-  const { data: lotes } = await supabaseClient.from('lotes').select('id, nome').eq('fazenda_id', fazendaId).order('nome');
-  sel.innerHTML = `<option value="">Todos os lotes</option>` +
+
+  const [{ data: mangas }, { data: lotes }] = await Promise.all([
+    supabaseClient.from('mangas').select('id, numero').eq('fazenda_id', fazendaId).order('numero'),
+    supabaseClient.from('lotes').select('id, nome').eq('fazenda_id', fazendaId).order('nome'),
+  ]);
+
+  selManga.innerHTML = `<option value="">Todas as mangas</option>` +
+    (mangas || []).map(m => `<option value="${m.id}">Manga ${m.numero}</option>`).join('');
+  selLote.innerHTML = `<option value="">Todos os lotes</option>` +
     (lotes || []).map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
 }
 
+// ---------- Carregamento e enriquecimento com histórico de pesagens ----------
 async function carregarDados() {
-  const { data: animais, error } = await supabaseClient.from('vw_animais_resumo').select('*');
+  const [{ data: animais, error }, { data: pesagens }] = await Promise.all([
+    supabaseClient.from('vw_animais_resumo').select('*'),
+    supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso').order('data_pesagem', { ascending: false }),
+  ]);
 
   if (error) {
-    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="9">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="12">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
-  animaisCache = animais || [];
+  const pesagensPorAnimal = {};
+  (pesagens || []).forEach(p => {
+    if (!pesagensPorAnimal[p.animal_id]) pesagensPorAnimal[p.animal_id] = [];
+    pesagensPorAnimal[p.animal_id].push(p);
+  });
+
+  animaisCache = (animais || []).map(a => {
+    const historico = pesagensPorAnimal[a.id] || [];
+    let pesoAnterior = null, dataPesoAnterior = null, dataUltimoPeso = null, diasEntre = null;
+
+    if (historico.length >= 2) {
+      dataUltimoPeso = historico[0].data_pesagem;
+      pesoAnterior = historico[1].peso;
+      dataPesoAnterior = historico[1].data_pesagem;
+    } else if (historico.length === 1) {
+      dataUltimoPeso = historico[0].data_pesagem;
+      pesoAnterior = a.peso_entrada;
+      dataPesoAnterior = a.data_entrada;
+    } else {
+      dataUltimoPeso = a.data_entrada;
+    }
+
+    if (dataPesoAnterior && dataUltimoPeso) {
+      diasEntre = Math.round((new Date(dataUltimoPeso) - new Date(dataPesoAnterior)) / 86400000);
+    }
+
+    return { ...a, peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior, data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre };
+  });
+
   aplicarFiltros();
 }
 
 function aplicarFiltros() {
   const fazendaId = document.getElementById('filtroFazenda').value;
+  const mangaId = document.getElementById('filtroManga').value;
   const loteId = document.getElementById('filtroLote').value;
   const categoria = document.getElementById('filtroCategoria').value;
   const status = document.getElementById('filtroStatus').value;
@@ -124,6 +182,7 @@ function aplicarFiltros() {
 
   listaFiltrada = animaisCache.filter(a => {
     if (fazendaId && a.fazenda_id !== fazendaId) return false;
+    if (mangaId && a.manga_id !== mangaId) return false;
     if (loteId && a.lote_id !== loteId) return false;
     if (categoria && a.categoria !== categoria) return false;
     if (status && a.status !== status) return false;
@@ -133,7 +192,17 @@ function aplicarFiltros() {
 
   renderMetricas();
   renderGraficos();
+  renderTitulo();
   renderTabela();
+}
+
+function renderTitulo() {
+  const selFazenda = document.getElementById('filtroFazenda');
+  const selManga = document.getElementById('filtroManga');
+  const fazendaTexto = selFazenda.value ? selFazenda.options[selFazenda.selectedIndex].textContent.toUpperCase() : 'TODAS AS FAZENDAS';
+  const mangaTexto = selManga.value ? ` (${selManga.options[selManga.selectedIndex].textContent.toUpperCase()})` : '';
+  const dataHoje = new Date().toLocaleDateString('pt-BR');
+  document.getElementById('tituloRelatorio').textContent = `RELATÓRIO GMD ${fazendaTexto}${mangaTexto} - ${dataHoje}`;
 }
 
 function renderMetricas() {
@@ -193,15 +262,15 @@ function agruparGmdPor(lista, campo) {
 }
 
 function renderBarras(grupos) {
-  if (grupos.length === 0) return '<p style="color:#3d6080;font-size:13px">Sem dados suficientes para esse filtro.</p>';
+  if (grupos.length === 0) return '<p style="color:var(--text-dim);font-size:13px">Sem dados suficientes para esse filtro.</p>';
   const max = Math.max(...grupos.map(g => g.media), 0.01);
   return grupos.map(g => `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <span style="font-size:12px;color:#7aa3cc;min-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.nome}</span>
-      <div style="background:#0a1628;border-radius:3px;height:14px;flex:1;overflow:hidden">
-        <div style="height:100%;border-radius:3px;width:${(g.media / max) * 100}%;background:#1a4a8a"></div>
+      <span style="font-size:12px;color:var(--text-soft);min-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.nome}</span>
+      <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+        <div style="height:100%;border-radius:3px;width:${(g.media / max) * 100}%;background:var(--accent-bg)"></div>
       </div>
-      <span style="font-size:12px;color:#e2eaf4;min-width:54px;text-align:right">${g.media.toFixed(2)} kg/d</span>
+      <span style="font-size:12px;color:var(--text);min-width:54px;text-align:right">${g.media.toFixed(2)} kg/d</span>
     </div>
   `).join('');
 }
@@ -216,8 +285,12 @@ function ordenarPor(campo) {
   renderTabela();
 }
 
+function formatarDataBR(dataStr) {
+  return dataStr ? new Date(dataStr + 'T00:00:00').toLocaleDateString('pt-BR') : null;
+}
+
 function renderTabela() {
-  const ordenada = [...listaFiltrada].sort((a, b) => {
+  listaOrdenada = [...listaFiltrada].sort((a, b) => {
     let va = a[sortField], vb = b[sortField];
     if (sortField === 'brinco') { va = String(va); vb = String(vb); }
     else { va = Number(va) || 0; vb = Number(vb) || 0; }
@@ -226,51 +299,105 @@ function renderTabela() {
     return 0;
   });
 
-  if (ordenada.length === 0) {
-    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum animal encontrado com esse filtro.</td></tr>';
+  if (listaOrdenada.length === 0) {
+    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="12">Nenhum animal encontrado com esse filtro.</td></tr>';
+    document.getElementById('rodapeRelatorio').innerHTML = '';
     return;
   }
 
-  document.getElementById('tabelaRanking').innerHTML = ordenada.map(a => `
+  document.getElementById('tabelaRanking').innerHTML = listaOrdenada.map(a => `
     <tr>
-      <td><b style="color:#e2eaf4">#${a.brinco}</b></td>
       <td>${a.fazenda_nome || '—'}</td>
-      <td>${a.lote_nome || '—'}</td>
-      <td>${a.categoria || '—'}</td>
+      <td>${a.manga_numero ? 'Manga ' + a.manga_numero : '—'}</td>
+      <td><b style="color:var(--text)">#${a.brinco}</b></td>
+      <td>${a.sexo || '—'}</td>
       <td>${a.peso_entrada !== null ? Number(a.peso_entrada).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.peso_anterior !== null ? Number(a.peso_anterior).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${formatarDataBR(a.data_peso_anterior) || '—'}</td>
+      <td>${a.dias_entre_pesagens !== null ? a.dias_entre_pesagens : '—'}</td>
       <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${formatarDataBR(a.data_ultimo_peso) || '—'}</td>
       <td>${a.ganho_total !== null ? Number(a.ganho_total).toLocaleString('pt-BR') + ' kg' : '—'}</td>
       <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) + ' kg/d' : '—'}</td>
-      <td>${a.dias_no_ciclo !== null ? a.dias_no_ciclo + ' dias' : '—'}</td>
     </tr>
   `).join('');
+
+  const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+
+  document.getElementById('rodapeRelatorio').innerHTML = `
+    <tr>
+      <td colspan="10" style="text-align:right;font-weight:600;color:var(--text)">GMD MÉDIO</td>
+      <td></td>
+      <td style="font-weight:600;color:var(--text)">${gmdMedio.toFixed(2)} kg/d</td>
+    </tr>
+  `;
 }
 
-function exportarCsv() {
-  if (listaFiltrada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+// ---------- Exportação ----------
+function exportarExcel() {
+  if (listaOrdenada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
 
-  const colunas = ['brinco','fazenda_nome','lote_nome','categoria','peso_entrada','peso_atual','ganho_total','gmd_atual','dias_no_ciclo','status'];
-  const cabecalho = ['Brinco','Fazenda','Lote','Categoria','Peso entrada','Peso atual','Ganho total','GMD','Dias no ciclo','Status'];
+  const linhas = listaOrdenada.map(a => ({
+    'Fazenda': a.fazenda_nome || '',
+    'Manga': a.manga_numero ? `Manga ${a.manga_numero}` : '',
+    'Brinco': a.brinco,
+    'Sexo': a.sexo || '',
+    'Peso Entrada (kg)': a.peso_entrada ?? '',
+    'Peso Anterior (kg)': a.peso_anterior ?? '',
+    'Data Peso Anterior': formatarDataBR(a.data_peso_anterior) || '',
+    'Dias Entre Pesagens': a.dias_entre_pesagens ?? '',
+    'Peso na Data (kg)': a.peso_atual ?? '',
+    'Data Último Peso': formatarDataBR(a.data_ultimo_peso) || '',
+    'Ganho (kg)': a.ganho_total ?? '',
+    'Último GMD': a.gmd_atual ?? '',
+  }));
 
-  const linhas = [cabecalho.join(';')];
-  listaFiltrada.forEach(a => {
-    const linha = colunas.map(c => {
-      const v = a[c];
-      return v === null || v === undefined ? '' : String(v).replace(/;/g, ',');
-    });
-    linhas.push(linha.join(';'));
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  ws['!cols'] = [{wch:16},{wch:10},{wch:9},{wch:8},{wch:13},{wch:13},{wch:15},{wch:11},{wch:13},{wch:14},{wch:10},{wch:11}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Relatorio GMD');
+  XLSX.writeFile(wb, `relatorio-gmd-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportarPdf() {
+  if (listaOrdenada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+  doc.setFontSize(13);
+  doc.text(document.getElementById('tituloRelatorio').textContent, 40, 30);
+
+  const linhas = listaOrdenada.map(a => [
+    a.fazenda_nome || '—',
+    a.manga_numero ? `Manga ${a.manga_numero}` : '—',
+    a.brinco,
+    a.sexo || '—',
+    a.peso_entrada !== null ? Number(a.peso_entrada).toLocaleString('pt-BR') : '—',
+    a.peso_anterior !== null ? Number(a.peso_anterior).toLocaleString('pt-BR') : '—',
+    formatarDataBR(a.data_peso_anterior) || '—',
+    a.dias_entre_pesagens !== null ? a.dias_entre_pesagens : '—',
+    a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') : '—',
+    formatarDataBR(a.data_ultimo_peso) || '—',
+    a.ganho_total !== null ? Number(a.ganho_total).toLocaleString('pt-BR') : '—',
+    a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) : '—',
+  ]);
+
+  const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+
+  doc.autoTable({
+    startY: 45,
+    head: [['Fazenda', 'Manga', 'Brinco', 'Sexo', 'Peso Entrada', 'Peso Anterior', 'Data Ant.', 'Dias', 'Peso Atual', 'Data Últ.', 'Ganho', 'Último GMD']],
+    body: linhas,
+    foot: [['', '', '', '', '', '', '', '', '', '', 'GMD MÉDIO', gmdMedio.toFixed(2)]],
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [26, 74, 138] },
+    footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold' },
   });
 
-  const csv = '\uFEFF' + linhas.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `relatorio-zootecnico-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  doc.save(`relatorio-gmd-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 (async function init() {
