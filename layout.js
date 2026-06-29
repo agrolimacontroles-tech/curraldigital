@@ -10,7 +10,7 @@
 const MENU_ITEMS = [
   { page: 'painel',     label: 'Painel',     icon: 'ti-layout-dashboard' },
   { page: 'fazendas',   label: 'Fazendas',   icon: 'ti-building-warehouse' },
-  { page: 'animais',    label: 'Animais',    icon: 'ti-paw' },
+  { page: 'animais',    label: 'Animais',    img: 'boi-icon.png' },
   { page: 'lotes',      label: 'Lotes',      icon: 'ti-stack-2' },
   { page: 'mangas',     label: 'Mangas',     icon: 'ti-fence' },
   { page: 'compras',    label: 'Compras',    icon: 'ti-shopping-cart' },
@@ -21,7 +21,7 @@ const MENU_ITEMS = [
 function renderTopbarSidebar(activePage) {
   const itemsHtml = MENU_ITEMS.map(item => `
     <button class="sitem ${item.page === activePage ? 'active' : ''}" title="${item.label}" onclick="location.href='${item.page}.html'">
-      <i class="ti ${item.icon}"></i><span>${item.label}</span>
+      ${item.img ? `<img src="${item.img}" class="sitem-icon-img">` : `<i class="ti ${item.icon}"></i>`}<span>${item.label}</span>
     </button>
   `).join('');
 
@@ -32,7 +32,7 @@ function renderTopbarSidebar(activePage) {
     <div class="topbar">
       <button class="menubtn" onclick="toggleSidebar()" title="Minimizar/expandir menu"><i class="ti ti-menu-2"></i></button>
       <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
-      <div class="brand"><i class="ti ti-paw"></i> CurralDigital</div>
+      <div class="brand"><img src="boi-icon.png" class="brand-icon"> CurralDigital</div>
       <div class="spacer"></div>
       <button class="theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
         <i class="ti ${temaAtual === 'light' ? 'ti-moon' : 'ti-sun'}" id="themeToggleIcon"></i>

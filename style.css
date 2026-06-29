@@ -98,6 +98,7 @@ a { color: var(--accent); text-decoration: none; }
 .brand-logo { height: 28px; width: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; }
 .brand i { color: var(--accent); font-size: 19px; }
+.brand-icon { height: 20px; width: auto; }
 .topbar .spacer { flex: 1; }
 .theme-toggle {
   border: 0.5px solid var(--border); background: transparent; color: var(--text-muted);
@@ -127,6 +128,7 @@ a { color: var(--accent); text-decoration: none; }
   font-family: inherit;
 }
 .sitem i { font-size: 18px; width: 18px; flex-shrink: 0; }
+.sitem-icon-img { height: 16px; width: 18px; object-fit: contain; flex-shrink: 0; }
 .sitem:hover { background: var(--bg-hover); color: var(--text); }
 .sitem.active { background: var(--accent-active-bg); color: var(--accent); border-left: 2px solid var(--accent); }
 
