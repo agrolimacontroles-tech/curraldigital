@@ -98,6 +98,26 @@ let listaFiltrada = [];
 let listaOrdenada = [];
 let sortField = 'gmd_atual';
 let sortDir = 'desc';
+let logoBase64 = null;
+
+function carregarLogoBase64() {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (e) {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'logo-agrolima.png';
+  });
+}
 
 // ---------- Filtros (fazenda → manga + lote em cascata) ----------
 async function carregarFiltrosFazenda() {
@@ -377,7 +397,13 @@ function exportarPdf() {
   }
 
   doc.setFontSize(13);
-  doc.text(document.getElementById('tituloRelatorio').textContent, 40, 30);
+  const titulo = document.getElementById('tituloRelatorio').textContent;
+  if (logoBase64) {
+    try { doc.addImage(logoBase64, 'PNG', 40, 12, 26, 26); } catch (e) { /* segue sem a logo se der erro */ }
+    doc.text(titulo, 75, 30);
+  } else {
+    doc.text(titulo, 40, 30);
+  }
 
   const linhas = listaOrdenada.map(a => [
     a.fazenda_nome || '—',
@@ -415,6 +441,7 @@ function exportarPdf() {
   showUserEmail();
   carregarFiltrosFazenda();
   carregarDados();
+  logoBase64 = await carregarLogoBase64();
 })();
 </script>
 
