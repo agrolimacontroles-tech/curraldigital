@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -89,6 +90,13 @@ document.getElementById('mainContent').innerHTML = `
           </div>
           <div class="fgroup"><label>Buscar brinco</label><input id="v_filtro_brinco" placeholder="Digite o brinco..." oninput="renderTabelaAnimaisDisponiveis()"></div>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;padding:10px;background:var(--bg-input);border-radius:8px">
+          <span style="font-size:12px;color:var(--text-soft)">Ou marque em lote por planilha (Brinco + Peso de saída):</span>
+          <a class="btn btn-secondary" href="modelo-venda.xlsx" download style="padding:5px 10px;font-size:12px"><i class="ti ti-download"></i> Modelo</a>
+          <input type="file" id="arquivoVenda" accept=".xlsx,.xls" style="font-size:12px">
+          <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px" onclick="processarPlanilhaVenda()"><i class="ti ti-upload"></i> Importar</button>
+        </div>
+        <div id="msgImportVenda" class="msg"></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -329,6 +337,111 @@ function atualizarResumoSelecionados() {
   animaisSelecionados.forEach(v => { pesoTotal += Number(v.pesoSaida) || 0; });
   document.getElementById('resumoSelecionados').textContent = `${qtd} animal${qtd === 1 ? '' : 'is'} selecionado${qtd === 1 ? '' : 's'}`;
   document.getElementById('pesoTotalSelecionados').textContent = `${pesoTotal.toLocaleString('pt-BR')} kg`;
+}
+
+// ---------- Importação de planilha (Brinco + Peso de saída) ----------
+function normalizarTexto(s) {
+  return String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizarCabecalho(s) {
+  return normalizarTexto(s).replace(/[^a-z0-9]/g, '');
+}
+
+function lerArquivoComoLinhas(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+        if (matriz.length === 0) { resolve([]); return; }
+
+        const mapaColunas = {};
+        matriz[0].forEach((cabecalho, idx) => { mapaColunas[normalizarCabecalho(cabecalho)] = idx; });
+
+        const linhas = [];
+        for (let i = 1; i < matriz.length; i++) {
+          const linhaBruta = matriz[i];
+          const vazia = linhaBruta.every(v => v === '' || v === null || v === undefined);
+          if (vazia) continue;
+          const obj = { __linha: i + 1 };
+          Object.entries(mapaColunas).forEach(([chave, idx]) => { obj[chave] = linhaBruta[idx]; });
+          linhas.push(obj);
+        }
+        resolve(linhas);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function processarPlanilhaVenda() {
+  const file = document.getElementById('arquivoVenda').files[0];
+  if (!file) { showMsg('msgImportVenda', 'Selecione um arquivo .xlsx primeiro.', 'error'); return; }
+
+  let linhas;
+  try {
+    linhas = await lerArquivoComoLinhas(file);
+  } catch (err) {
+    showMsg('msgImportVenda', 'Erro ao ler o arquivo: ' + err.message, 'error');
+    return;
+  }
+
+  if (linhas.length === 0) {
+    showMsg('msgImportVenda', 'A planilha não tem linhas de dados.', 'error');
+    return;
+  }
+
+  const brincosPlanilha = linhas.map(l => String(l.brinco || '').trim()).filter(Boolean);
+  if (brincosPlanilha.length === 0) {
+    showMsg('msgImportVenda', 'Nenhum brinco válido encontrado na planilha.', 'error');
+    return;
+  }
+
+  const { data: encontrados, error } = await supabaseClient
+    .from('vw_animais_resumo')
+    .select('id, brinco, status, peso_atual')
+    .in('brinco', brincosPlanilha);
+
+  if (error) {
+    showMsg('msgImportVenda', 'Erro ao consultar animais: ' + error.message, 'error');
+    return;
+  }
+
+  const mapaEncontrados = new Map((encontrados || []).map(a => [normalizarTexto(a.brinco), a]));
+  let adicionados = 0;
+  const semSucesso = [];
+
+  linhas.forEach(linha => {
+    const brinco = String(linha.brinco || '').trim();
+    if (!brinco) return;
+
+    const animal = mapaEncontrados.get(normalizarTexto(brinco));
+    if (!animal) { semSucesso.push(`${brinco} (não encontrado)`); return; }
+    if (animal.status !== 'ativo') { semSucesso.push(`${brinco} (não está ativo)`); return; }
+
+    const pesoSaida = parseFloat(String(linha.pesodesaida ?? '').replace(',', '.')) || Number(animal.peso_atual) || 0;
+    animaisSelecionados.set(animal.id, { brinco: animal.brinco, pesoSaida });
+    adicionados++;
+  });
+
+  // Limpa os filtros pra trazer todos os animais ativos à vista, com os importados já marcados
+  document.getElementById('v_filtro_fazenda').value = '';
+  document.getElementById('v_filtro_lote').innerHTML = '<option value="">Todos</option>';
+  document.getElementById('v_filtro_brinco').value = '';
+  await carregarAnimaisDisponiveis();
+
+  const resumo = semSucesso.length > 0
+    ? `${adicionados} animal(is) adicionado(s) à seleção. ${semSucesso.length} linha(s) com problema: ${semSucesso.join(', ')}.`
+    : `${adicionados} animal(is) adicionado(s) à seleção com sucesso!`;
+  showMsg('msgImportVenda', resumo, semSucesso.length > 0 ? 'error' : 'success');
+
+  document.getElementById('arquivoVenda').value = '';
 }
 
 // ---------- Geração de parcelas (preview editável) ----------
