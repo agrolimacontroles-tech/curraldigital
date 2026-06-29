@@ -527,8 +527,8 @@ function renderTabelaAnimais(lista) {
     const sexoCategoria = [a.sexo, a.categoria].filter(Boolean).join(' · ') || '—';
     const acoesAtivo = a.status === 'ativo' ? `
         <button class="btn btn-warning" style="padding:4px 10px" title="Transferir (fazenda/lote/manga)" onclick="abrirModalTransferencia('${a.id}','${a.brinco}')"><i class="ti ti-arrows-exchange"></i></button>
-        <button class="btn btn-success" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-currency-dollar"></i></button>
-        <button class="btn btn-danger" style="padding:4px 10px" title="Registrar óbito" onclick="abrirModalMorte('${a.id}','${a.brinco}')"><i class="ti ti-alert-triangle"></i></button>
+        <button class="btn btn-success" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-cash-banknote"></i></button>
+        <button class="btn btn-danger" style="padding:4px 10px" title="Registrar óbito" onclick="abrirModalMorte('${a.id}','${a.brinco}')"><i class="ti ti-skull"></i></button>
       ` : '';
 
     return `
