@@ -395,19 +395,18 @@ async function carregarDados() {
       diasEntre = Math.round((new Date(dataUltimoPeso) - new Date(dataPesoAnterior)) / 86400000);
     }
 
-    let gmdt = null;
-    if (a.data_entrada && dataUltimoPeso && a.peso_entrada !== null && a.peso_atual !== null) {
-      const diasDesdeEntrada = Math.round((new Date(dataUltimoPeso) - new Date(a.data_entrada)) / 86400000);
-      if (diasDesdeEntrada > 0) {
-        gmdt = (Number(a.peso_atual) - Number(a.peso_entrada)) / diasDesdeEntrada;
-      }
-    }
+    // a.gmd_atual (vindo da view) já é o GMD acumulado desde a entrada — é exatamente
+    // o que queremos no GMDT, sem precisar recalcular. O "Último GMD" (GMD só do
+    // intervalo entre as 2 últimas pesagens) vem do gmd_periodo da pesagem mais recente.
+    const gmdt = a.gmd_atual;
+    const gmdPeriodo = historico.length > 0 ? historico[0].gmd_periodo : null;
 
     return {
       ...a,
       ...(extrasPorId.get(a.id) || {}),
       peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior,
-      data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre, gmdt,
+      data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre,
+      gmd_atual: gmdPeriodo, gmdt,
     };
   });
 

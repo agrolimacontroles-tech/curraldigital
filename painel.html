@@ -53,8 +53,24 @@ async function carregarPainel() {
   // Métricas principais
   const { data: animais } = await supabaseClient.from('vw_animais_resumo').select('*');
   const { data: fazendas } = await supabaseClient.from('fazendas').select('id');
+  const { data: pesagensRecentes } = await supabaseClient
+    .from('pesagens')
+    .select('animal_id, data_pesagem, gmd_periodo')
+    .order('data_pesagem', { ascending: false });
 
-  const ativos = (animais || []).filter(a => a.status === 'ativo');
+  // gmd_atual da view é o GMD acumulado desde a entrada — pra esse painel queremos
+  // o GMD do último intervalo entre pesagens (gmd_periodo da pesagem mais recente).
+  const gmdPeriodoPorAnimal = new Map();
+  (pesagensRecentes || []).forEach(p => {
+    if (!gmdPeriodoPorAnimal.has(p.animal_id)) gmdPeriodoPorAnimal.set(p.animal_id, p.gmd_periodo);
+  });
+
+  const todosComGmdPeriodo = (animais || []).map(a => ({
+    ...a,
+    gmd_atual: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
+  }));
+
+  const ativos = todosComGmdPeriodo.filter(a => a.status === 'ativo');
   const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
   const gmdValidos = ativos.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? (gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length) : 0;
