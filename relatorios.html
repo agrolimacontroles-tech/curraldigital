@@ -54,45 +54,81 @@ document.getElementById('mainContent').innerHTML = `
     <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
   </div>
 
-  <div class="metrics" id="metricas">
-    <div class="metric"><span class="spinner"></span></div>
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnAbaGeral" onclick="mostrarAbaRelatorio('geral')">Visão geral</button>
+    <button class="stbtn" id="btnAbaPersonalizado" onclick="mostrarAbaRelatorio('personalizado')">Relatório personalizado</button>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
+  <div id="abaGeral">
+    <div class="metrics" id="metricas">
+      <div class="metric"><span class="spinner"></span></div>
+    </div>
 
-  <div class="card">
-    <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <span id="tituloRelatorio">RELATÓRIO GMD</span>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
-        <button class="btn btn-secondary" onclick="exportarPdf()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
+
+    <div class="card">
+      <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span id="tituloRelatorio">RELATÓRIO GMD</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+          <button class="btn btn-secondary" onclick="exportarPdf()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        </div>
+      </div>
+      <div class="cardb table-wrap">
+        <table class="table-center">
+          <thead>
+            <tr>
+              <th>Fazenda</th>
+              <th>Manga</th>
+              <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
+              <th>Sexo</th>
+              <th style="cursor:pointer" onclick="ordenarPor('data_entrada')">Data entrada</th>
+              <th style="cursor:pointer" onclick="ordenarPor('peso_entrada')">Peso entrada</th>
+              <th style="cursor:pointer" onclick="ordenarPor('peso_anterior')">Peso anterior</th>
+              <th>Data peso anterior</th>
+              <th style="cursor:pointer" onclick="ordenarPor('dias_entre_pesagens')">Dias entre pesagens</th>
+              <th style="cursor:pointer" onclick="ordenarPor('peso_atual')">Peso na data</th>
+              <th>Data último peso</th>
+              <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho</th>
+              <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">Último GMD</th>
+              <th style="cursor:pointer" onclick="ordenarPor('gmdt')">GMDT</th>
+            </tr>
+          </thead>
+          <tbody id="tabelaRanking">
+            <tr class="empty-row"><td colspan="14"><span class="spinner"></span> Carregando...</td></tr>
+          </tbody>
+          <tfoot id="rodapeRelatorio"></tfoot>
+        </table>
       </div>
     </div>
-    <div class="cardb table-wrap">
-      <table class="table-center">
-        <thead>
-          <tr>
-            <th>Fazenda</th>
-            <th>Manga</th>
-            <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
-            <th>Sexo</th>
-            <th style="cursor:pointer" onclick="ordenarPor('data_entrada')">Data entrada</th>
-            <th style="cursor:pointer" onclick="ordenarPor('peso_entrada')">Peso entrada</th>
-            <th style="cursor:pointer" onclick="ordenarPor('peso_anterior')">Peso anterior</th>
-            <th>Data peso anterior</th>
-            <th style="cursor:pointer" onclick="ordenarPor('dias_entre_pesagens')">Dias entre pesagens</th>
-            <th style="cursor:pointer" onclick="ordenarPor('peso_atual')">Peso na data</th>
-            <th>Data último peso</th>
-            <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho</th>
-            <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">Último GMD</th>
-            <th style="cursor:pointer" onclick="ordenarPor('gmdt')">GMDT</th>
-          </tr>
-        </thead>
-        <tbody id="tabelaRanking">
-          <tr class="empty-row"><td colspan="14"><span class="spinner"></span> Carregando...</td></tr>
-        </tbody>
-        <tfoot id="rodapeRelatorio"></tfoot>
-      </table>
+  </div>
+
+  <div id="abaPersonalizado" style="display:none">
+    <div class="card">
+      <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>Escolha as colunas do relatório</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px" onclick="marcarTodasColunas(true)">Marcar todas</button>
+          <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px" onclick="marcarTodasColunas(false)">Limpar seleção</button>
+        </div>
+      </div>
+      <div class="cardb" id="seletorColunas"></div>
+    </div>
+
+    <div class="card">
+      <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span id="tituloPersonalizado">RELATÓRIO PERSONALIZADO</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="exportarExcelPersonalizado()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+          <button class="btn btn-secondary" onclick="exportarPdfPersonalizado()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        </div>
+      </div>
+      <div class="cardb table-wrap">
+        <table class="table-center" id="tabelaPersonalizadaTable">
+          <thead><tr id="cabecalhoPersonalizado"></tr></thead>
+          <tbody id="tabelaPersonalizada"><tr class="empty-row"><td>Selecione ao menos uma coluna acima.</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 `;
@@ -103,6 +139,109 @@ let listaOrdenada = [];
 let sortField = 'gmd_atual';
 let sortDir = 'desc';
 let logoBase64 = null;
+
+// ---------- Navegação entre abas ----------
+function mostrarAbaRelatorio(aba) {
+  document.getElementById('abaGeral').style.display = aba === 'geral' ? 'block' : 'none';
+  document.getElementById('abaPersonalizado').style.display = aba === 'personalizado' ? 'block' : 'none';
+  document.getElementById('btnAbaGeral').classList.toggle('active', aba === 'geral');
+  document.getElementById('btnAbaPersonalizado').classList.toggle('active', aba === 'personalizado');
+}
+
+// ---------- Catálogo de campos do relatório personalizado ----------
+const CATALOGO_CAMPOS = [
+  { key: 'brinco', label: 'Brinco', grupo: 'Identificação', tipo: 'texto', padrao: true },
+  { key: 'sexo', label: 'Sexo', grupo: 'Identificação', tipo: 'texto', padrao: true },
+  { key: 'categoria', label: 'Categoria', grupo: 'Identificação', tipo: 'texto', padrao: true },
+  { key: 'raca', label: 'Raça', grupo: 'Identificação', tipo: 'texto' },
+  { key: 'pelagem', label: 'Pelagem', grupo: 'Identificação', tipo: 'texto' },
+  { key: 'marca', label: 'Marca/Sinal', grupo: 'Identificação', tipo: 'texto' },
+  { key: 'castrado', label: 'Castrado', grupo: 'Identificação', tipo: 'bool' },
+  { key: 'status', label: 'Status', grupo: 'Identificação', tipo: 'texto' },
+
+  { key: 'fazenda_nome', label: 'Fazenda', grupo: 'Localização', tipo: 'texto', padrao: true },
+  { key: 'lote_nome', label: 'Lote', grupo: 'Localização', tipo: 'texto', padrao: true },
+  { key: 'manga_numero', label: 'Manga', grupo: 'Localização', tipo: 'manga', padrao: true },
+
+  { key: 'data_nascimento', label: 'Data nascimento', grupo: 'Origem e compra', tipo: 'data' },
+  { key: 'data_desmame', label: 'Data desmame', grupo: 'Origem e compra', tipo: 'data' },
+  { key: 'data_entrada', label: 'Data entrada', grupo: 'Origem e compra', tipo: 'data', padrao: true },
+  { key: 'produtor_origem', label: 'Produtor de origem', grupo: 'Origem e compra', tipo: 'texto' },
+  { key: 'preco_compra_kg', label: 'Preço compra/kg', grupo: 'Origem e compra', tipo: 'money' },
+  { key: 'frete_compra', label: 'Frete compra', grupo: 'Origem e compra', tipo: 'money' },
+  { key: 'custo_total', label: 'Custo total', grupo: 'Origem e compra', tipo: 'money' },
+
+  { key: 'peso_entrada', label: 'Peso entrada', grupo: 'Pesagens e desempenho', tipo: 'kg', padrao: true },
+  { key: 'peso_anterior', label: 'Peso anterior', grupo: 'Pesagens e desempenho', tipo: 'kg' },
+  { key: 'data_peso_anterior', label: 'Data peso anterior', grupo: 'Pesagens e desempenho', tipo: 'data' },
+  { key: 'dias_entre_pesagens', label: 'Dias entre pesagens', grupo: 'Pesagens e desempenho', tipo: 'dias' },
+  { key: 'peso_atual', label: 'Peso na data (atual)', grupo: 'Pesagens e desempenho', tipo: 'kg', padrao: true },
+  { key: 'data_ultimo_peso', label: 'Data último peso', grupo: 'Pesagens e desempenho', tipo: 'data' },
+  { key: 'ganho_total', label: 'Ganho', grupo: 'Pesagens e desempenho', tipo: 'kg', padrao: true },
+  { key: 'gmd_atual', label: 'Último GMD', grupo: 'Pesagens e desempenho', tipo: 'kgd', padrao: true },
+  { key: 'gmdt', label: 'GMDT', grupo: 'Pesagens e desempenho', tipo: 'kgd', padrao: true },
+  { key: 'dias_no_ciclo', label: 'Dias no ciclo', grupo: 'Pesagens e desempenho', tipo: 'dias' },
+
+  { key: 'data_venda', label: 'Data venda', grupo: 'Venda', tipo: 'data' },
+  { key: 'peso_saida', label: 'Peso saída', grupo: 'Venda', tipo: 'kg' },
+  { key: 'preco_venda', label: 'Preço venda', grupo: 'Venda', tipo: 'money' },
+  { key: 'comprador', label: 'Comprador', grupo: 'Venda', tipo: 'texto' },
+  { key: 'lucro', label: 'Lucro', grupo: 'Venda', tipo: 'money' },
+
+  { key: 'data_morte', label: 'Data óbito', grupo: 'Óbito', tipo: 'data' },
+  { key: 'causa_morte', label: 'Causa óbito', grupo: 'Óbito', tipo: 'texto' },
+
+  { key: 'observacoes', label: 'Observações', grupo: 'Outros', tipo: 'texto' },
+];
+
+function colunasSelecionadas() {
+  try {
+    const salvas = JSON.parse(localStorage.getItem('curraldigital-colunas-relatorio'));
+    if (Array.isArray(salvas)) return new Set(salvas);
+  } catch (e) { /* ignora e usa padrão */ }
+  return new Set(CATALOGO_CAMPOS.filter(c => c.padrao).map(c => c.key));
+}
+
+function salvarColunasSelecionadas(set) {
+  localStorage.setItem('curraldigital-colunas-relatorio', JSON.stringify([...set]));
+}
+
+function renderSeletorColunas() {
+  const selecionadas = colunasSelecionadas();
+  const grupos = {};
+  CATALOGO_CAMPOS.forEach(c => {
+    if (!grupos[c.grupo]) grupos[c.grupo] = [];
+    grupos[c.grupo].push(c);
+  });
+
+  document.getElementById('seletorColunas').innerHTML = Object.entries(grupos).map(([grupo, campos]) => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text-soft);font-weight:600;margin-bottom:6px">${grupo}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px">
+        ${campos.map(c => `
+          <label class="fcheck" style="padding-top:0">
+            <input type="checkbox" data-coluna="${c.key}" ${selecionadas.has(c.key) ? 'checked' : ''} onchange="alternarColuna('${c.key}', this.checked)">
+            ${c.label}
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function alternarColuna(key, marcado) {
+  const set = colunasSelecionadas();
+  if (marcado) set.add(key); else set.delete(key);
+  salvarColunasSelecionadas(set);
+  renderPersonalizado();
+}
+
+function marcarTodasColunas(marcarTodas) {
+  const set = marcarTodas ? new Set(CATALOGO_CAMPOS.map(c => c.key)) : new Set();
+  salvarColunasSelecionadas(set);
+  renderSeletorColunas();
+  renderPersonalizado();
+}
 
 function carregarLogoBase64() {
   return new Promise((resolve) => {
@@ -189,15 +328,18 @@ function carregarFiltroDatas(mesSelecionado) {
 
 // ---------- Carregamento e enriquecimento com histórico de pesagens ----------
 async function carregarDados() {
-  const [{ data: animais, error }, { data: pesagens }] = await Promise.all([
+  const [{ data: animais, error }, { data: pesagens }, { data: extras }] = await Promise.all([
     supabaseClient.from('vw_animais_resumo').select('*'),
     supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso').order('data_pesagem', { ascending: false }),
+    supabaseClient.from('animais').select('id, pelagem, marca, castrado, data_nascimento, data_desmame, preco_compra_kg, frete_compra, data_venda, peso_saida, preco_venda, comprador, data_morte, causa_morte, observacoes'),
   ]);
 
   if (error) {
     document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="14">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
+
+  const extrasPorId = new Map((extras || []).map(e => [e.id, e]));
 
   const pesagensPorAnimal = {};
   (pesagens || []).forEach(p => {
@@ -233,11 +375,17 @@ async function carregarDados() {
       }
     }
 
-    return { ...a, peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior, data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre, gmdt };
+    return {
+      ...a,
+      ...(extrasPorId.get(a.id) || {}),
+      peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior,
+      data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre, gmdt,
+    };
   });
 
   carregarFiltroMeses();
   carregarFiltroDatas(document.getElementById('filtroMes').value);
+  renderSeletorColunas();
   aplicarFiltros();
 }
 
@@ -267,6 +415,7 @@ function aplicarFiltros() {
   renderGraficos();
   renderTitulo();
   renderTabela();
+  renderPersonalizado();
 }
 
 function renderTitulo() {
@@ -277,6 +426,7 @@ function renderTitulo() {
   const mangaTexto = selManga.value ? ` (${selManga.options[selManga.selectedIndex].textContent.toUpperCase()})` : '';
   const dataTitulo = dataFiltrada ? formatarDataBR(dataFiltrada) : new Date().toLocaleDateString('pt-BR');
   document.getElementById('tituloRelatorio').textContent = `RELATÓRIO GMD ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
+  document.getElementById('tituloPersonalizado').textContent = `RELATÓRIO PERSONALIZADO ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
 }
 
 function renderMetricas() {
@@ -505,6 +655,127 @@ function exportarPdf() {
   });
 
   doc.save(`relatorio-gmd-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ---------- Relatório personalizado ----------
+function formatarValorCampo(animal, campo) {
+  const v = animal[campo.key];
+  if (v === null || v === undefined || v === '') return '—';
+
+  switch (campo.tipo) {
+    case 'data': return formatarDataBR(v) || '—';
+    case 'kg': return Number(v).toLocaleString('pt-BR') + ' kg';
+    case 'kgd': return Number(v).toFixed(2) + ' kg/d';
+    case 'dias': return v + ' dias';
+    case 'money': return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    case 'bool': return v ? 'Sim' : 'Não';
+    case 'manga': return 'Manga ' + v;
+    default: return String(v);
+  }
+}
+
+function valorBrutoCampo(animal, campo) {
+  const v = animal[campo.key];
+  if (v === null || v === undefined || v === '') return '';
+  if (campo.tipo === 'data') return formatarDataBR(v) || '';
+  if (campo.tipo === 'bool') return v ? 'Sim' : 'Não';
+  if (campo.tipo === 'manga') return 'Manga ' + v;
+  if (campo.tipo === 'kgd') return Number(v).toFixed(2);
+  return v;
+}
+
+function renderPersonalizado() {
+  const selecionadas = colunasSelecionadas();
+  const campos = CATALOGO_CAMPOS.filter(c => selecionadas.has(c.key));
+
+  if (campos.length === 0) {
+    document.getElementById('cabecalhoPersonalizado').innerHTML = '';
+    document.getElementById('tabelaPersonalizada').innerHTML = '<tr class="empty-row"><td>Selecione ao menos uma coluna acima.</td></tr>';
+    return;
+  }
+
+  document.getElementById('cabecalhoPersonalizado').innerHTML = campos.map(c => `<th>${c.label}</th>`).join('');
+
+  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+
+  if (lista.length === 0) {
+    document.getElementById('tabelaPersonalizada').innerHTML = `<tr class="empty-row"><td colspan="${campos.length}">Nenhum animal encontrado com esse filtro.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('tabelaPersonalizada').innerHTML = lista.map(a => `
+    <tr>${campos.map(c => `<td>${c.key === 'brinco' ? `<b style="color:var(--text)">#${a.brinco}</b>` : formatarValorCampo(a, c)}</td>`).join('')}</tr>
+  `).join('');
+}
+
+function exportarExcelPersonalizado() {
+  const selecionadas = colunasSelecionadas();
+  const campos = CATALOGO_CAMPOS.filter(c => selecionadas.has(c.key));
+  if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
+
+  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+
+  const linhas = lista.map(a => {
+    const linha = {};
+    campos.forEach(c => { linha[c.label] = valorBrutoCampo(a, c); });
+    return linha;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  ws['!cols'] = campos.map(() => ({ wch: 14 }));
+  Object.keys(ws).forEach(ref => {
+    if (ref[0] === '!') return;
+    if (!ws[ref].s) ws[ref].s = {};
+    ws[ref].s.alignment = { horizontal: 'center' };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Relatorio Personalizado');
+  XLSX.writeFile(wb, `relatorio-personalizado-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportarPdfPersonalizado() {
+  const selecionadas = colunasSelecionadas();
+  const campos = CATALOGO_CAMPOS.filter(c => selecionadas.has(c.key));
+  if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
+
+  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+  if (typeof doc.autoTable !== 'function') {
+    alert('A biblioteca de tabelas do PDF não carregou corretamente. Recarregue a página e tente novamente.');
+    return;
+  }
+
+  doc.setFontSize(13);
+  const titulo = document.getElementById('tituloPersonalizado').textContent;
+  if (logoBase64) {
+    try { doc.addImage(logoBase64, 'PNG', 40, 12, 26, 26); } catch (e) { /* segue sem a logo se der erro */ }
+    doc.text(titulo, 75, 30);
+  } else {
+    doc.text(titulo, 40, 30);
+  }
+
+  const linhas = lista.map(a => campos.map(c => String(valorBrutoCampo(a, c) || '—')));
+
+  doc.autoTable({
+    startY: 45,
+    head: [campos.map(c => c.label)],
+    body: linhas,
+    theme: 'grid',
+    styles: { fontSize: 7.5, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+  });
+
+  doc.save(`relatorio-personalizado-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 (async function init() {
