@@ -67,7 +67,7 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
     <div class="cardb table-wrap">
-      <table>
+      <table class="table-center">
         <thead>
           <tr>
             <th>Fazenda</th>
@@ -347,7 +347,7 @@ function renderTabela() {
 
   document.getElementById('rodapeRelatorio').innerHTML = `
     <tr>
-      <td colspan="10" style="text-align:right;font-weight:600;color:var(--text)">GMD MÉDIO</td>
+      <td colspan="10" style="text-align:center;font-weight:600;color:var(--text)">GMD MÉDIO</td>
       <td></td>
       <td style="font-weight:600;color:var(--text)">${gmdMedio.toFixed(2)} kg/d</td>
     </tr>
@@ -375,6 +375,11 @@ function exportarExcel() {
 
   const ws = XLSX.utils.json_to_sheet(linhas);
   ws['!cols'] = [{wch:16},{wch:10},{wch:9},{wch:8},{wch:13},{wch:13},{wch:15},{wch:11},{wch:13},{wch:14},{wch:10},{wch:11}];
+  Object.keys(ws).forEach(ref => {
+    if (ref[0] === '!') return;
+    if (!ws[ref].s) ws[ref].s = {};
+    ws[ref].s.alignment = { horizontal: 'center' };
+  });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Relatorio GMD');
   XLSX.writeFile(wb, `relatorio-gmd-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -428,9 +433,10 @@ function exportarPdf() {
     head: [['Fazenda', 'Manga', 'Brinco', 'Sexo', 'Peso Entrada', 'Peso Anterior', 'Data Ant.', 'Dias', 'Peso Atual', 'Data Últ.', 'Ganho', 'Último GMD']],
     body: linhas,
     foot: [['', '', '', '', '', '', '', '', '', '', 'GMD MÉDIO', gmdMedio.toFixed(2)]],
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [26, 74, 138] },
-    footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold' },
+    theme: 'grid',
+    styles: { fontSize: 8, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold', halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
   });
 
   doc.save(`relatorio-gmd-${new Date().toISOString().slice(0, 10)}.pdf`);
