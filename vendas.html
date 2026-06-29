@@ -300,7 +300,7 @@ function renderTabelaAnimaisDisponiveis() {
 
 function toggleSelecaoAnimal(id, brinco, pesoDefault, marcado) {
   if (marcado) {
-    animaisSelecionados.set(id, { brinco, pesoSaida: pesoDefault || 0, valorVendido: null });
+    animaisSelecionados.set(id, { brinco, pesoSaida: pesoDefault || 0, valorVendido: null, comprador: null, dataVenda: null, observacoes: null });
   } else {
     animaisSelecionados.delete(id);
   }
@@ -332,7 +332,7 @@ function alternarSelecaoTodos(marcarTodos) {
   lista.forEach(a => {
     if (marcarTodos) {
       if (!animaisSelecionados.has(a.id)) {
-        animaisSelecionados.set(a.id, { brinco: a.brinco, pesoSaida: a.peso_atual ?? a.peso_entrada ?? 0, valorVendido: null });
+        animaisSelecionados.set(a.id, { brinco: a.brinco, pesoSaida: a.peso_atual ?? a.peso_entrada ?? 0, valorVendido: null, comprador: null, dataVenda: null, observacoes: null });
       }
     } else {
       animaisSelecionados.delete(a.id);
@@ -360,6 +360,27 @@ function normalizarTexto(s) {
 
 function normalizarCabecalho(s) {
   return normalizarTexto(s).replace(/[^a-z0-9]/g, '');
+}
+
+function excelDateParaISO(valor) {
+  if (valor === '' || valor === null || valor === undefined) return null;
+  if (valor instanceof Date) {
+    const ano = valor.getUTCFullYear();
+    const mes = String(valor.getUTCMonth() + 1).padStart(2, '0');
+    const dia = String(valor.getUTCDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+  }
+  if (typeof valor === 'number') {
+    const d = XLSX.SSF.parse_date_code(valor);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+  }
+  const texto = String(valor).trim();
+  let m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return null;
 }
 
 function lerArquivoComoLinhas(file) {
@@ -442,7 +463,13 @@ async function processarPlanilhaVenda() {
     const pesoSaida = parseFloat(String(linha.pesodesaida ?? '').replace(',', '.')) || Number(animal.peso_atual) || 0;
     const valorTexto = String(linha.valorvendido ?? '').trim();
     const valorVendido = valorTexto ? (parseFloat(valorTexto.replace(',', '.')) || null) : null;
-    animaisSelecionados.set(animal.id, { brinco: animal.brinco, pesoSaida, valorVendido });
+    const compradorLinha = String(linha.comprador ?? '').trim() || null;
+    const dataVendaLinha = excelDateParaISO(linha.datadavenda ?? linha.dataventa ?? '');
+    const observacoesLinha = String(linha.observacoes ?? '').trim() || null;
+    animaisSelecionados.set(animal.id, {
+      brinco: animal.brinco, pesoSaida, valorVendido,
+      comprador: compradorLinha, dataVenda: dataVendaLinha, observacoes: observacoesLinha,
+    });
     adicionados++;
   });
 
@@ -682,10 +709,11 @@ async function salvarVenda() {
       }
       return supabaseClient.from('animais').update({
         status: 'vendido',
-        data_venda: dataVenda,
+        data_venda: info.dataVenda || dataVenda,
         peso_saida: pesoSaida,
         preco_venda: precoVenda,
-        comprador: payload.comprador,
+        comprador: info.comprador || payload.comprador,
+        observacoes: info.observacoes || undefined,
         venda_id: nova.id,
       }).eq('id', animalId);
     });
