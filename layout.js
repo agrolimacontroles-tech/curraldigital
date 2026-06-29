@@ -21,7 +21,7 @@ const MENU_ITEMS = [
 function renderTopbarSidebar(activePage) {
   const itemsHtml = MENU_ITEMS.map(item => `
     <button class="sitem ${item.page === activePage ? 'active' : ''}" title="${item.label}" onclick="location.href='${item.page}.html'">
-      ${item.img ? `<img src="${item.img}" class="sitem-icon-img">` : `<i class="ti ${item.icon}"></i>`}<span>${item.label}</span>
+      ${item.img ? `<img src="${item.img}" class="sitem-icon-img" width="18" height="15">` : `<i class="ti ${item.icon}"></i>`}<span>${item.label}</span>
     </button>
   `).join('');
 
@@ -32,7 +32,7 @@ function renderTopbarSidebar(activePage) {
     <div class="topbar">
       <button class="menubtn" onclick="toggleSidebar()" title="Minimizar/expandir menu"><i class="ti ti-menu-2"></i></button>
       <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
-      <div class="brand"><img src="boi-icon.png" class="brand-icon"> CurralDigital</div>
+      <div class="brand"><img src="boi-icon.png" class="brand-icon" width="22" height="18"> CurralDigital</div>
       <div class="spacer"></div>
       <button class="theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
         <i class="ti ${temaAtual === 'light' ? 'ti-moon' : 'ti-sun'}" id="themeToggleIcon"></i>
