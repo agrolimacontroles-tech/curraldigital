@@ -57,6 +57,7 @@ document.getElementById('mainContent').innerHTML = `
   <div class="subtoggle">
     <button class="stbtn active" id="btnAbaGeral" onclick="mostrarAbaRelatorio('geral')">Visão geral</button>
     <button class="stbtn" id="btnAbaPersonalizado" onclick="mostrarAbaRelatorio('personalizado')">Relatório personalizado</button>
+    <button class="stbtn" id="btnAbaHistorico" onclick="mostrarAbaRelatorio('historico')">Histórico de pesagens</button>
   </div>
 
   <div id="abaGeral">
@@ -131,11 +132,35 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
+
+  <div id="abaHistorico" style="display:none">
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+      Usa os filtros de Fazenda/Manga/Lote do topo pra ver um lote inteiro, ou digite o brinco na busca pra ver um animal só — mostra TODAS as pesagens de cada animal, não só a mais recente.
+    </p>
+    <div class="card">
+      <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span id="tituloHistorico">HISTÓRICO DE PESAGENS</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="exportarExcelHistorico()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+          <button class="btn btn-secondary" onclick="exportarPdfHistorico()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        </div>
+      </div>
+      <div class="cardb table-wrap">
+        <table class="table-center">
+          <thead>
+            <tr><th>Brinco</th><th>Fazenda</th><th>Lote</th><th>Manga</th><th>Data da pesagem</th><th>Peso</th><th>GMD período</th><th>GMD acumulado</th></tr>
+          </thead>
+          <tbody id="tabelaHistorico"><tr class="empty-row"><td colspan="8">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 `;
 
 let animaisCache = [];
 let listaFiltrada = [];
 let listaOrdenada = [];
+let pesagensPorAnimalCache = {};
 let sortField = 'gmd_atual';
 let sortDir = 'desc';
 let logoBase64 = null;
@@ -144,8 +169,10 @@ let logoBase64 = null;
 function mostrarAbaRelatorio(aba) {
   document.getElementById('abaGeral').style.display = aba === 'geral' ? 'block' : 'none';
   document.getElementById('abaPersonalizado').style.display = aba === 'personalizado' ? 'block' : 'none';
+  document.getElementById('abaHistorico').style.display = aba === 'historico' ? 'block' : 'none';
   document.getElementById('btnAbaGeral').classList.toggle('active', aba === 'geral');
   document.getElementById('btnAbaPersonalizado').classList.toggle('active', aba === 'personalizado');
+  document.getElementById('btnAbaHistorico').classList.toggle('active', aba === 'historico');
 }
 
 // ---------- Catálogo de campos do relatório personalizado ----------
@@ -330,7 +357,7 @@ function carregarFiltroDatas(mesSelecionado) {
 async function carregarDados() {
   const [{ data: animais, error }, { data: pesagens }, { data: extras }] = await Promise.all([
     supabaseClient.from('vw_animais_resumo').select('*'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso').order('data_pesagem', { ascending: false }),
+    supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso, gmd_periodo, gmd_acumulado').order('data_pesagem', { ascending: false }),
     supabaseClient.from('animais').select('id, pelagem, marca, castrado, data_nascimento, data_desmame, preco_compra_kg, frete_compra, data_venda, peso_saida, preco_venda, comprador, data_morte, causa_morte, observacoes'),
   ]);
 
@@ -346,6 +373,7 @@ async function carregarDados() {
     if (!pesagensPorAnimal[p.animal_id]) pesagensPorAnimal[p.animal_id] = [];
     pesagensPorAnimal[p.animal_id].push(p);
   });
+  pesagensPorAnimalCache = pesagensPorAnimal;
 
   animaisCache = (animais || []).map(a => {
     const historico = pesagensPorAnimal[a.id] || [];
@@ -416,6 +444,7 @@ function aplicarFiltros() {
   renderTitulo();
   renderTabela();
   renderPersonalizado();
+  renderHistorico();
 }
 
 function renderTitulo() {
@@ -427,6 +456,7 @@ function renderTitulo() {
   const dataTitulo = dataFiltrada ? formatarDataBR(dataFiltrada) : new Date().toLocaleDateString('pt-BR');
   document.getElementById('tituloRelatorio').textContent = `RELATÓRIO GMD ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
   document.getElementById('tituloPersonalizado').textContent = `RELATÓRIO PERSONALIZADO ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
+  document.getElementById('tituloHistorico').textContent = `HISTÓRICO DE PESAGENS ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
 }
 
 function renderMetricas() {
@@ -658,6 +688,10 @@ function exportarPdf() {
 }
 
 // ---------- Relatório personalizado ----------
+function listaPersonalizadaAtual() {
+  return listaFiltrada;
+}
+
 function formatarValorCampo(animal, campo) {
   const v = animal[campo.key];
   if (v === null || v === undefined || v === '') return '—';
@@ -696,7 +730,7 @@ function renderPersonalizado() {
 
   document.getElementById('cabecalhoPersonalizado').innerHTML = campos.map(c => `<th>${c.label}</th>`).join('');
 
-  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
 
   if (lista.length === 0) {
     document.getElementById('tabelaPersonalizada').innerHTML = `<tr class="empty-row"><td colspan="${campos.length}">Nenhum animal encontrado com esse filtro.</td></tr>`;
@@ -713,7 +747,7 @@ function exportarExcelPersonalizado() {
   const campos = CATALOGO_CAMPOS.filter(c => selecionadas.has(c.key));
   if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
 
-  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
   if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
 
   const linhas = lista.map(a => {
@@ -739,7 +773,7 @@ function exportarPdfPersonalizado() {
   const campos = CATALOGO_CAMPOS.filter(c => selecionadas.has(c.key));
   if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
 
-  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
   if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -776,6 +810,142 @@ function exportarPdfPersonalizado() {
   });
 
   doc.save(`relatorio-personalizado-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ---------- Histórico de pesagens ----------
+function listaParaHistorico() {
+  const fazendaId = document.getElementById('filtroFazenda').value;
+  const mangaId = document.getElementById('filtroManga').value;
+  const loteId = document.getElementById('filtroLote').value;
+  const categoria = document.getElementById('filtroCategoria').value;
+  const status = document.getElementById('filtroStatus').value;
+  const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
+
+  return animaisCache.filter(a => {
+    if (fazendaId && a.fazenda_id !== fazendaId) return false;
+    if (mangaId && a.manga_id !== mangaId) return false;
+    if (loteId && a.lote_id !== loteId) return false;
+    if (categoria && a.categoria !== categoria) return false;
+    if (status && a.status !== status) return false;
+    if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
+    return true;
+  });
+}
+
+function linhasHistorico() {
+  const linhas = [];
+  listaParaHistorico().forEach(a => {
+    const historico = [...(pesagensPorAnimalCache[a.id] || [])].sort((x, y) => new Date(x.data_pesagem) - new Date(y.data_pesagem));
+    historico.forEach(p => {
+      linhas.push({
+        brinco: a.brinco, fazenda_nome: a.fazenda_nome, lote_nome: a.lote_nome, manga_numero: a.manga_numero,
+        data_pesagem: p.data_pesagem, peso: p.peso, gmd_periodo: p.gmd_periodo, gmd_acumulado: p.gmd_acumulado,
+      });
+    });
+  });
+
+  return linhas.sort((x, y) => {
+    const cmp = String(x.brinco).localeCompare(String(y.brinco), 'pt-BR', { numeric: true });
+    return cmp !== 0 ? cmp : new Date(x.data_pesagem) - new Date(y.data_pesagem);
+  });
+}
+
+function renderHistorico() {
+  const linhas = linhasHistorico();
+
+  if (linhas.length === 0) {
+    document.getElementById('tabelaHistorico').innerHTML = '<tr class="empty-row"><td colspan="8">Nenhuma pesagem encontrada com esse filtro.</td></tr>';
+    return;
+  }
+
+  document.getElementById('tabelaHistorico').innerHTML = linhas.map(l => `
+    <tr>
+      <td><b style="color:var(--text)">#${l.brinco}</b></td>
+      <td>${l.fazenda_nome || '—'}</td>
+      <td>${l.lote_nome || '—'}</td>
+      <td>${l.manga_numero ? 'Manga ' + l.manga_numero : '—'}</td>
+      <td>${formatarDataBR(l.data_pesagem) || '—'}</td>
+      <td>${l.peso !== null ? Number(l.peso).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${l.gmd_periodo !== null ? Number(l.gmd_periodo).toFixed(2) + ' kg/d' : '—'}</td>
+      <td>${l.gmd_acumulado !== null ? Number(l.gmd_acumulado).toFixed(2) + ' kg/d' : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function exportarExcelHistorico() {
+  const linhas = linhasHistorico();
+  if (linhas.length === 0) { alert('Não há pesagens para exportar com esse filtro.'); return; }
+
+  const dados = linhas.map(l => ({
+    'Brinco': l.brinco,
+    'Fazenda': l.fazenda_nome || '',
+    'Lote': l.lote_nome || '',
+    'Manga': l.manga_numero ? `Manga ${l.manga_numero}` : '',
+    'Data da Pesagem': formatarDataBR(l.data_pesagem) || '',
+    'Peso (kg)': l.peso ?? '',
+    'GMD Período': l.gmd_periodo !== null ? Number(l.gmd_periodo).toFixed(2) : '',
+    'GMD Acumulado': l.gmd_acumulado !== null ? Number(l.gmd_acumulado).toFixed(2) : '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(dados);
+  ws['!cols'] = [{ wch: 9 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 13 }];
+  Object.keys(ws).forEach(ref => {
+    if (ref[0] === '!') return;
+    if (!ws[ref].s) ws[ref].s = {};
+    ws[ref].s.alignment = { horizontal: 'center' };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Historico Pesagens');
+  XLSX.writeFile(wb, `historico-pesagens-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportarPdfHistorico() {
+  const linhas = linhasHistorico();
+  if (linhas.length === 0) { alert('Não há pesagens para exportar com esse filtro.'); return; }
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+  if (typeof doc.autoTable !== 'function') {
+    alert('A biblioteca de tabelas do PDF não carregou corretamente. Recarregue a página e tente novamente.');
+    return;
+  }
+
+  doc.setFontSize(13);
+  const titulo = document.getElementById('tituloHistorico').textContent;
+  if (logoBase64) {
+    try { doc.addImage(logoBase64, 'PNG', 40, 12, 26, 26); } catch (e) { /* segue sem a logo se der erro */ }
+    doc.text(titulo, 75, 30);
+  } else {
+    doc.text(titulo, 40, 30);
+  }
+
+  const corpo = linhas.map(l => [
+    l.brinco,
+    l.fazenda_nome || '—',
+    l.lote_nome || '—',
+    l.manga_numero ? `Manga ${l.manga_numero}` : '—',
+    formatarDataBR(l.data_pesagem) || '—',
+    l.peso !== null ? Number(l.peso).toLocaleString('pt-BR') : '—',
+    l.gmd_periodo !== null ? Number(l.gmd_periodo).toFixed(2) : '—',
+    l.gmd_acumulado !== null ? Number(l.gmd_acumulado).toFixed(2) : '—',
+  ]);
+
+  doc.autoTable({
+    startY: 45,
+    head: [['Brinco', 'Fazenda', 'Lote', 'Manga', 'Data Pesagem', 'Peso', 'GMD Período', 'GMD Acumulado']],
+    body: corpo,
+    theme: 'grid',
+    styles: { fontSize: 8, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+  });
+
+  doc.save(`historico-pesagens-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 (async function init() {
