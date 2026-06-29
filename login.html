@@ -6,13 +6,17 @@
 <title>CurralDigital — Login</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('curraldigital-tema') || 'dark');</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
 <div class="login-wrap">
+  <button class="theme-toggle login-theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
+    <i class="ti ti-sun" id="themeToggleIcon"></i>
+  </button>
   <div class="login-card">
-    <div class="login-logo"><i class="ti ti-cow"></i> CurralDigital</div>
+    <div class="login-logo"><img src="logo-agrolima.png" alt="Agrolima"> CurralDigital</div>
 
     <div id="msg" class="msg"></div>
 
@@ -33,6 +37,16 @@
 
 <script src="supabase-config.js"></script>
 <script>
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-theme') || 'dark';
+  const novo = atual === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', novo);
+  localStorage.setItem('curraldigital-tema', novo);
+  document.getElementById('themeToggleIcon').className = `ti ${novo === 'light' ? 'ti-moon' : 'ti-sun'}`;
+}
+document.getElementById('themeToggleIcon').className =
+  `ti ${document.documentElement.getAttribute('data-theme') === 'light' ? 'ti-moon' : 'ti-sun'}`;
+
 function showMsg(text, type) {
   const el = document.getElementById('msg');
   el.textContent = text;

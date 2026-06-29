@@ -2,6 +2,11 @@
 // CurralDigital — Sidebar / navegação compartilhada
 // ============================================================
 
+(function aplicarTemaSalvo() {
+  const temaSalvo = localStorage.getItem('curraldigital-tema') || 'dark';
+  document.documentElement.setAttribute('data-theme', temaSalvo);
+})();
+
 const MENU_ITEMS = [
   { page: 'painel',     label: 'Painel',     icon: 'ti-layout-dashboard' },
   { page: 'fazendas',   label: 'Fazendas',   icon: 'ti-building-warehouse' },
@@ -20,11 +25,17 @@ function renderTopbarSidebar(activePage) {
     </button>
   `).join('');
 
+  const temaAtual = document.documentElement.getAttribute('data-theme') || 'dark';
+
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="topbar">
       <button class="menubtn" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
+      <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
       <div class="brand"><i class="ti ti-cow"></i> CurralDigital</div>
       <div class="spacer"></div>
+      <button class="theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
+        <i class="ti ${temaAtual === 'light' ? 'ti-moon' : 'ti-sun'}" id="themeToggleIcon"></i>
+      </button>
       <div class="user-info">
         <span id="userEmail"></span>
         <button class="logout-btn" onclick="logout()">Sair</button>
@@ -37,6 +48,15 @@ function renderTopbarSidebar(activePage) {
       <div class="main" id="mainContent"></div>
     </div>
   `);
+}
+
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-theme') || 'dark';
+  const novo = atual === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', novo);
+  localStorage.setItem('curraldigital-tema', novo);
+  const icone = document.getElementById('themeToggleIcon');
+  if (icone) icone.className = `ti ${novo === 'light' ? 'ti-moon' : 'ti-sun'}`;
 }
 
 function toggleSidebar() {
