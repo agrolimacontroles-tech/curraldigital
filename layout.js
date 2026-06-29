@@ -10,7 +10,7 @@
 const MENU_ITEMS = [
   { page: 'painel',     label: 'Painel',     icon: 'ti-layout-dashboard' },
   { page: 'fazendas',   label: 'Fazendas',   icon: 'ti-building-warehouse' },
-  { page: 'animais',    label: 'Animais',    icon: 'ti-cow' },
+  { page: 'animais',    label: 'Animais',    icon: 'ti-paw' },
   { page: 'lotes',      label: 'Lotes',      icon: 'ti-stack-2' },
   { page: 'mangas',     label: 'Mangas',     icon: 'ti-fence' },
   { page: 'compras',    label: 'Compras',    icon: 'ti-shopping-cart' },
@@ -32,7 +32,7 @@ function renderTopbarSidebar(activePage) {
     <div class="topbar">
       <button class="menubtn" onclick="toggleSidebar()" title="Minimizar/expandir menu"><i class="ti ti-menu-2"></i></button>
       <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
-      <div class="brand"><i class="ti ti-cow"></i> CurralDigital</div>
+      <div class="brand"><i class="ti ti-paw"></i> CurralDigital</div>
       <div class="spacer"></div>
       <button class="theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
         <i class="ti ${temaAtual === 'light' ? 'ti-moon' : 'ti-sun'}" id="themeToggleIcon"></i>

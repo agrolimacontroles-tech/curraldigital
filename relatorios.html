@@ -49,6 +49,8 @@ document.getElementById('mainContent').innerHTML = `
       <option value="vendido">Vendidos</option>
       <option value="morto">Mortos</option>
     </select>
+    <select id="filtroMes" onchange="carregarFiltroDatas(this.value); aplicarFiltros()"><option value="">Todos os meses</option></select>
+    <select id="filtroData" onchange="aplicarFiltros()"><option value="">Todas as datas</option></select>
     <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
   </div>
 
@@ -74,6 +76,7 @@ document.getElementById('mainContent').innerHTML = `
             <th>Manga</th>
             <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
             <th>Sexo</th>
+            <th style="cursor:pointer" onclick="ordenarPor('data_entrada')">Data entrada</th>
             <th style="cursor:pointer" onclick="ordenarPor('peso_entrada')">Peso entrada</th>
             <th style="cursor:pointer" onclick="ordenarPor('peso_anterior')">Peso anterior</th>
             <th>Data peso anterior</th>
@@ -82,10 +85,11 @@ document.getElementById('mainContent').innerHTML = `
             <th>Data último peso</th>
             <th style="cursor:pointer" onclick="ordenarPor('ganho_total')">Ganho</th>
             <th style="cursor:pointer" onclick="ordenarPor('gmd_atual')">Último GMD</th>
+            <th style="cursor:pointer" onclick="ordenarPor('gmdt')">GMDT</th>
           </tr>
         </thead>
         <tbody id="tabelaRanking">
-          <tr class="empty-row"><td colspan="12"><span class="spinner"></span> Carregando...</td></tr>
+          <tr class="empty-row"><td colspan="14"><span class="spinner"></span> Carregando...</td></tr>
         </tbody>
         <tfoot id="rodapeRelatorio"></tfoot>
       </table>
@@ -148,6 +152,41 @@ async function carregarMangasELotesFiltro(fazendaId) {
     (lotes || []).map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
 }
 
+function mesLabel(chaveAnoMes) {
+  const [ano, mes] = chaveAnoMes.split('-');
+  const nomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return `${nomes[parseInt(mes, 10) - 1]}/${ano}`;
+}
+
+function carregarFiltroMeses() {
+  const sel = document.getElementById('filtroMes');
+  const valorAtual = sel.value;
+
+  const chaves = new Set();
+  animaisCache.forEach(a => { if (a.data_ultimo_peso) chaves.add(a.data_ultimo_peso.slice(0, 7)); });
+
+  const ordenadas = [...chaves].sort().reverse();
+  sel.innerHTML = `<option value="">Todos os meses</option>` +
+    ordenadas.map(c => `<option value="${c}">${mesLabel(c)}</option>`).join('');
+
+  if (valorAtual) sel.value = valorAtual;
+}
+
+function carregarFiltroDatas(mesSelecionado) {
+  const sel = document.getElementById('filtroData');
+
+  const datas = new Set();
+  animaisCache.forEach(a => {
+    if (a.data_ultimo_peso && (!mesSelecionado || a.data_ultimo_peso.slice(0, 7) === mesSelecionado)) {
+      datas.add(a.data_ultimo_peso);
+    }
+  });
+
+  const ordenadas = [...datas].sort().reverse();
+  sel.innerHTML = `<option value="">Todas as datas</option>` +
+    ordenadas.map(d => `<option value="${d}">${formatarDataBR(d)}</option>`).join('');
+}
+
 // ---------- Carregamento e enriquecimento com histórico de pesagens ----------
 async function carregarDados() {
   const [{ data: animais, error }, { data: pesagens }] = await Promise.all([
@@ -156,7 +195,7 @@ async function carregarDados() {
   ]);
 
   if (error) {
-    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="12">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="14">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
@@ -186,9 +225,19 @@ async function carregarDados() {
       diasEntre = Math.round((new Date(dataUltimoPeso) - new Date(dataPesoAnterior)) / 86400000);
     }
 
-    return { ...a, peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior, data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre };
+    let gmdt = null;
+    if (a.data_entrada && dataUltimoPeso && a.peso_entrada !== null && a.peso_atual !== null) {
+      const diasDesdeEntrada = Math.round((new Date(dataUltimoPeso) - new Date(a.data_entrada)) / 86400000);
+      if (diasDesdeEntrada > 0) {
+        gmdt = (Number(a.peso_atual) - Number(a.peso_entrada)) / diasDesdeEntrada;
+      }
+    }
+
+    return { ...a, peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior, data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre, gmdt };
   });
 
+  carregarFiltroMeses();
+  carregarFiltroDatas(document.getElementById('filtroMes').value);
   aplicarFiltros();
 }
 
@@ -198,6 +247,8 @@ function aplicarFiltros() {
   const loteId = document.getElementById('filtroLote').value;
   const categoria = document.getElementById('filtroCategoria').value;
   const status = document.getElementById('filtroStatus').value;
+  const mes = document.getElementById('filtroMes').value;
+  const dataPesagem = document.getElementById('filtroData').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
 
   listaFiltrada = animaisCache.filter(a => {
@@ -206,6 +257,8 @@ function aplicarFiltros() {
     if (loteId && a.lote_id !== loteId) return false;
     if (categoria && a.categoria !== categoria) return false;
     if (status && a.status !== status) return false;
+    if (mes && (!a.data_ultimo_peso || a.data_ultimo_peso.slice(0, 7) !== mes)) return false;
+    if (dataPesagem && a.data_ultimo_peso !== dataPesagem) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
     return true;
   });
@@ -219,10 +272,11 @@ function aplicarFiltros() {
 function renderTitulo() {
   const selFazenda = document.getElementById('filtroFazenda');
   const selManga = document.getElementById('filtroManga');
+  const dataFiltrada = document.getElementById('filtroData').value;
   const fazendaTexto = selFazenda.value ? selFazenda.options[selFazenda.selectedIndex].textContent.toUpperCase() : 'TODAS AS FAZENDAS';
   const mangaTexto = selManga.value ? ` (${selManga.options[selManga.selectedIndex].textContent.toUpperCase()})` : '';
-  const dataHoje = new Date().toLocaleDateString('pt-BR');
-  document.getElementById('tituloRelatorio').textContent = `RELATÓRIO GMD ${fazendaTexto}${mangaTexto} - ${dataHoje}`;
+  const dataTitulo = dataFiltrada ? formatarDataBR(dataFiltrada) : new Date().toLocaleDateString('pt-BR');
+  document.getElementById('tituloRelatorio').textContent = `RELATÓRIO GMD ${fazendaTexto}${mangaTexto} - ${dataTitulo}`;
 }
 
 function renderMetricas() {
@@ -313,6 +367,7 @@ function renderTabela() {
   listaOrdenada = [...listaFiltrada].sort((a, b) => {
     let va = a[sortField], vb = b[sortField];
     if (sortField === 'brinco') { va = String(va); vb = String(vb); }
+    else if (sortField === 'data_entrada') { va = va ? new Date(va).getTime() : 0; vb = vb ? new Date(vb).getTime() : 0; }
     else { va = Number(va) || 0; vb = Number(vb) || 0; }
     if (va < vb) return sortDir === 'asc' ? -1 : 1;
     if (va > vb) return sortDir === 'asc' ? 1 : -1;
@@ -320,7 +375,7 @@ function renderTabela() {
   });
 
   if (listaOrdenada.length === 0) {
-    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="12">Nenhum animal encontrado com esse filtro.</td></tr>';
+    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="14">Nenhum animal encontrado com esse filtro.</td></tr>';
     document.getElementById('rodapeRelatorio').innerHTML = '';
     return;
   }
@@ -331,6 +386,7 @@ function renderTabela() {
       <td>${a.manga_numero ? 'Manga ' + a.manga_numero : '—'}</td>
       <td><b style="color:var(--text)">#${a.brinco}</b></td>
       <td>${a.sexo || '—'}</td>
+      <td>${formatarDataBR(a.data_entrada) || '—'}</td>
       <td>${a.peso_entrada !== null ? Number(a.peso_entrada).toLocaleString('pt-BR') + ' kg' : '—'}</td>
       <td>${a.peso_anterior !== null ? Number(a.peso_anterior).toLocaleString('pt-BR') + ' kg' : '—'}</td>
       <td>${formatarDataBR(a.data_peso_anterior) || '—'}</td>
@@ -339,17 +395,20 @@ function renderTabela() {
       <td>${formatarDataBR(a.data_ultimo_peso) || '—'}</td>
       <td>${a.ganho_total !== null ? Number(a.ganho_total).toLocaleString('pt-BR') + ' kg' : '—'}</td>
       <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) + ' kg/d' : '—'}</td>
+      <td>${a.gmdt !== null ? Number(a.gmdt).toFixed(2) + ' kg/d' : '—'}</td>
     </tr>
   `).join('');
 
   const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+  const gmdtValidos = listaOrdenada.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
 
   document.getElementById('rodapeRelatorio').innerHTML = `
     <tr>
-      <td colspan="10" style="text-align:center;font-weight:600;color:var(--text)">GMD MÉDIO</td>
-      <td></td>
+      <td colspan="12" style="text-align:center;font-weight:600;color:var(--text)">GMD MÉDIO / GMDT MÉDIO</td>
       <td style="font-weight:600;color:var(--text)">${gmdMedio.toFixed(2)} kg/d</td>
+      <td style="font-weight:600;color:var(--text)">${gmdtMedio.toFixed(2)} kg/d</td>
     </tr>
   `;
 }
@@ -363,6 +422,7 @@ function exportarExcel() {
     'Manga': a.manga_numero ? `Manga ${a.manga_numero}` : '',
     'Brinco': a.brinco,
     'Sexo': a.sexo || '',
+    'Data Entrada': formatarDataBR(a.data_entrada) || '',
     'Peso Entrada (kg)': a.peso_entrada ?? '',
     'Peso Anterior (kg)': a.peso_anterior ?? '',
     'Data Peso Anterior': formatarDataBR(a.data_peso_anterior) || '',
@@ -371,10 +431,11 @@ function exportarExcel() {
     'Data Último Peso': formatarDataBR(a.data_ultimo_peso) || '',
     'Ganho (kg)': a.ganho_total ?? '',
     'Último GMD': a.gmd_atual ?? '',
+    'GMDT': a.gmdt !== null ? Number(a.gmdt).toFixed(2) : '',
   }));
 
   const ws = XLSX.utils.json_to_sheet(linhas);
-  ws['!cols'] = [{wch:16},{wch:10},{wch:9},{wch:8},{wch:13},{wch:13},{wch:15},{wch:11},{wch:13},{wch:14},{wch:10},{wch:11}];
+  ws['!cols'] = [{wch:16},{wch:10},{wch:9},{wch:8},{wch:13},{wch:13},{wch:13},{wch:15},{wch:11},{wch:13},{wch:14},{wch:10},{wch:11},{wch:9}];
   Object.keys(ws).forEach(ref => {
     if (ref[0] === '!') return;
     if (!ws[ref].s) ws[ref].s = {};
@@ -415,6 +476,7 @@ function exportarPdf() {
     a.manga_numero ? `Manga ${a.manga_numero}` : '—',
     a.brinco,
     a.sexo || '—',
+    formatarDataBR(a.data_entrada) || '—',
     a.peso_entrada !== null ? Number(a.peso_entrada).toLocaleString('pt-BR') : '—',
     a.peso_anterior !== null ? Number(a.peso_anterior).toLocaleString('pt-BR') : '—',
     formatarDataBR(a.data_peso_anterior) || '—',
@@ -423,18 +485,21 @@ function exportarPdf() {
     formatarDataBR(a.data_ultimo_peso) || '—',
     a.ganho_total !== null ? Number(a.ganho_total).toLocaleString('pt-BR') : '—',
     a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) : '—',
+    a.gmdt !== null ? Number(a.gmdt).toFixed(2) : '—',
   ]);
 
   const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+  const gmdtValidos = listaOrdenada.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
 
   doc.autoTable({
     startY: 45,
-    head: [['Fazenda', 'Manga', 'Brinco', 'Sexo', 'Peso Entrada', 'Peso Anterior', 'Data Ant.', 'Dias', 'Peso Atual', 'Data Últ.', 'Ganho', 'Último GMD']],
+    head: [['Fazenda', 'Manga', 'Brinco', 'Sexo', 'Data Entrada', 'Peso Entrada', 'Peso Anterior', 'Data Ant.', 'Dias', 'Peso Atual', 'Data Últ.', 'Ganho', 'Último GMD', 'GMDT']],
     body: linhas,
-    foot: [['', '', '', '', '', '', '', '', '', '', 'GMD MÉDIO', gmdMedio.toFixed(2)]],
+    foot: [['', '', '', '', '', '', '', '', '', '', '', 'MÉDIAS', gmdMedio.toFixed(2), gmdtMedio.toFixed(2)]],
     theme: 'grid',
-    styles: { fontSize: 8, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
+    styles: { fontSize: 7.5, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
     headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
     footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold', halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
   });

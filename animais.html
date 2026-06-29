@@ -319,6 +319,38 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
+  <!-- Modal: transferir animal -->
+  <div class="modal-overlay" id="modalTransferencia" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modalTransferenciaTitulo">Transferir animal</span>
+        <button class="modal-close" onclick="fecharModal('modalTransferencia')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="msgTransferencia" class="msg"></div>
+        <div class="frow cols-1">
+          <div class="fgroup">
+            <label>Fazenda de destino *</label>
+            <select id="t_fazenda_id" onchange="carregarLotesEMangas(this.value, null, null, 't_lote_id', 't_manga_id')"><option value="">Carregando...</option></select>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="fgroup">
+            <label>Lote de destino</label>
+            <select id="t_lote_id"><option value="">Sem lote</option></select>
+          </div>
+          <div class="fgroup">
+            <label>Manga de destino</label>
+            <select id="t_manga_id"><option value="">Sem manga</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-warning" id="btnSalvarTransferencia" onclick="salvarTransferencia()">Confirmar transferência</button>
+        <button class="btn btn-secondary" onclick="fecharModal('modalTransferencia')">Cancelar</button>
+      </div>
+    </div>
+  </div>
 `;
 
 let animalEditandoId = null;
@@ -401,9 +433,9 @@ async function carregarSelectsCadastro() {
     }).join('');
 }
 
-async function carregarLotesEMangas(fazendaId, lotePreSelecionado, mangaPreSelecionado) {
-  const selLote = document.getElementById('a_lote_id');
-  const selManga = document.getElementById('a_manga_id');
+async function carregarLotesEMangas(fazendaId, lotePreSelecionado, mangaPreSelecionado, idLote, idManga) {
+  const selLote = document.getElementById(idLote || 'a_lote_id');
+  const selManga = document.getElementById(idManga || 'a_manga_id');
 
   if (!fazendaId) {
     selLote.innerHTML = `<option value="">Selecione a fazenda primeiro</option>`;
@@ -494,7 +526,8 @@ function renderTabelaAnimais(lista) {
     const localizacao = [a.lote_nome, a.manga_numero ? `Manga ${a.manga_numero}` : null].filter(Boolean).join(' / ') || '—';
     const sexoCategoria = [a.sexo, a.categoria].filter(Boolean).join(' · ') || '—';
     const acoesAtivo = a.status === 'ativo' ? `
-        <button class="btn btn-secondary" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-currency-dollar"></i></button>
+        <button class="btn btn-warning" style="padding:4px 10px" title="Transferir (fazenda/lote/manga)" onclick="abrirModalTransferencia('${a.id}','${a.brinco}')"><i class="ti ti-arrows-exchange"></i></button>
+        <button class="btn btn-success" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-currency-dollar"></i></button>
         <button class="btn btn-danger" style="padding:4px 10px" title="Registrar óbito" onclick="abrirModalMorte('${a.id}','${a.brinco}')"><i class="ti ti-alert-triangle"></i></button>
       ` : '';
 
@@ -509,7 +542,7 @@ function renderTabelaAnimais(lista) {
         <td>${a.dias_no_ciclo !== null ? a.dias_no_ciclo + ' dias' : '—'}</td>
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
-          <button class="btn btn-secondary" style="padding:4px 10px" title="Registrar pesagem" onclick="abrirModalPesagem('${a.id}','${a.brinco}')"><i class="ti ti-scale"></i></button>
+          <button class="btn btn-info" style="padding:4px 10px" title="Registrar pesagem" onclick="abrirModalPesagem('${a.id}','${a.brinco}')"><i class="ti ti-scale"></i></button>
           <button class="btn btn-secondary" style="padding:4px 10px" title="Editar" onclick="editarAnimal('${a.id}')"><i class="ti ti-pencil"></i></button>
           ${acoesAtivo}
           <button class="btn btn-danger" style="padding:4px 10px" title="Excluir" onclick="excluirAnimal('${a.id}','${a.brinco}')"><i class="ti ti-trash"></i></button>
@@ -1051,6 +1084,51 @@ async function processarPlanilhaPesagens() {
   const sucesso = resultados.filter(r => r.status === 'ok').length;
   btn.disabled = false;
   showMsg('msgImportPesagens', `${sucesso} de ${resultados.length} linha(s) importada(s) com sucesso.`, sucesso === resultados.length ? 'success' : 'error');
+}
+
+// ---------- Modal: transferência ----------
+async function abrirModalTransferencia(animalId, brinco) {
+  acaoAnimalId = animalId;
+  acaoAnimalBrinco = brinco;
+  document.getElementById('modalTransferenciaTitulo').textContent = `Transferir animal — #${brinco}`;
+  document.getElementById('msgTransferencia').className = 'msg';
+  document.getElementById('modalTransferencia').style.display = 'flex';
+
+  const animal = animaisCache.find(a => a.id === animalId);
+
+  const selFazenda = document.getElementById('t_fazenda_id');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+  selFazenda.innerHTML = `<option value="">Selecione...</option>` +
+    (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  if (animal) {
+    selFazenda.value = animal.fazenda_id || '';
+    await carregarLotesEMangas(animal.fazenda_id, animal.lote_id, animal.manga_id, 't_lote_id', 't_manga_id');
+  }
+}
+
+async function salvarTransferencia() {
+  const fazendaId = document.getElementById('t_fazenda_id').value;
+  if (!fazendaId) { showMsg('msgTransferencia', 'Selecione a fazenda de destino.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvarTransferencia');
+  btn.disabled = true;
+
+  const { error } = await supabaseClient.from('animais').update({
+    fazenda_id: fazendaId,
+    lote_id: document.getElementById('t_lote_id').value || null,
+    manga_id: document.getElementById('t_manga_id').value || null,
+  }).eq('id', acaoAnimalId);
+
+  btn.disabled = false;
+
+  if (error) {
+    showMsg('msgTransferencia', 'Erro ao transferir: ' + error.message, 'error');
+    return;
+  }
+
+  fecharModal('modalTransferencia');
+  carregarAnimais();
 }
 
 // ---------- Modal genérico ----------

@@ -155,6 +155,12 @@ a { color: var(--accent); text-decoration: none; }
 .btn-secondary:hover { background: var(--bg-hover); }
 .btn-danger { background: transparent; border-color: var(--danger-bg); color: var(--danger); }
 .btn-danger:hover { background: var(--danger-bg); }
+.btn-info { background: transparent; border-color: var(--info-bg); color: var(--info); }
+.btn-info:hover { background: var(--info-bg); }
+.btn-warning { background: transparent; border-color: var(--warning-bg); color: var(--warning); }
+.btn-warning:hover { background: var(--warning-bg); }
+.btn-success { background: transparent; border-color: var(--success-bg); color: var(--success); }
+.btn-success:hover { background: var(--success-bg); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- Toggle lista / cadastro ---------- */
@@ -269,6 +275,9 @@ tr:hover td { background: var(--bg-hover); }
 .modal-foot { padding: 0 1.1rem 1.1rem; display: flex; gap: 8px; }
 .mini-table { width: 100%; font-size: 12px; margin-top: 4px; }
 .mini-table td { padding: 5px 4px; color: var(--text-soft); border-bottom: 0.5px solid var(--divider-soft); }
+
+/* ---------- Tabela centralizada (uso pontual, ex: relatórios) ---------- */
+.table-center th, .table-center td { text-align: center; }
 
 /* ---------- Responsivo ---------- */
 @media (max-width: 720px) {
