@@ -713,7 +713,10 @@ async function salvarPesagem() {
   btn.disabled = false;
 
   if (error) {
-    showMsg('msgPesagem', 'Erro ao registrar: ' + error.message, 'error');
+    const motivo = error.code === '23505'
+      ? `Já existe uma pesagem registrada pra esse animal em ${new Date(data + 'T00:00:00').toLocaleDateString('pt-BR')}. Exclua ou edite a pesagem existente no histórico se quiser corrigir o valor.`
+      : 'Erro ao registrar: ' + error.message;
+    showMsg('msgPesagem', motivo, 'error');
     return;
   }
 
@@ -1071,10 +1074,15 @@ async function processarPlanilhaPesagens() {
 
   for (const item of validos) {
     const { error } = await supabaseClient.from('pesagens').insert(item.payload);
+    const motivo = error
+      ? (error.code === '23505'
+          ? `Já existe pesagem registrada pra esse animal em ${new Date(item.payload.data_pesagem + 'T00:00:00').toLocaleDateString('pt-BR')}.`
+          : error.message)
+      : 'Importado com sucesso.';
     resultados.push({
       linha: item.linha, brinco: item.brinco,
       status: error ? 'erro' : 'ok',
-      motivo: error ? error.message : 'Importado com sucesso.',
+      motivo,
     });
   }
 
