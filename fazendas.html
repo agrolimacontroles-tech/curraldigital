@@ -26,12 +26,12 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div class="subtoggle">
-    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de fazendas</button>
+    <button class="stbtn active" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
+    <button class="stbtn" id="btnTabLista" onclick="mostrarAba('lista')">Lista de fazendas</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar fazenda</button>
-    <button class="stbtn" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
   </div>
 
-  <div id="abaLista">
+  <div id="abaLista" style="display:none">
     <div class="card">
       <div class="cardb table-wrap">
         <table>
@@ -89,7 +89,7 @@ document.getElementById('mainContent').innerHTML = `
     </div>
   </div>
 
-  <div id="abaDashboard" style="display:none">
+  <div id="abaDashboard">
     <div class="toolbar">
       <select id="filtroFazendaDash" onchange="renderDashboardFazenda()"><option value="">Todas as fazendas</option></select>
     </div>
@@ -311,9 +311,12 @@ function renderDashboardFazenda() {
   const ocupacaoPct = capacidadeTotal > 0 ? Math.min(100, (ativos.length / capacidadeTotal) * 100) : null;
 
   const lotesNoFiltro = fazendaId ? lotesCacheDash.filter(l => l.fazenda_id === fazendaId) : lotesCacheDash;
-  const mangasIds = new Set(ativos.map(a => a.manga_id).filter(Boolean));
 
   document.getElementById('metricasDash').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
+      <div><div class="mlabel">Fazendas</div><div class="mval">${fazendasNoFiltro.length}</div></div>
+    </div>
     <div class="metric">
       <div class="micon bg-info"><i class="ti ti-tag"></i></div>
       <div><div class="mlabel">Animais ativos</div><div class="mval">${ativos.length}</div></div>
@@ -326,28 +329,24 @@ function renderDashboardFazenda() {
       <div class="micon bg-info"><i class="ti ti-scale"></i></div>
       <div><div class="mlabel">Peso médio</div><div class="mval">${pesoMedio.toFixed(0)} kg</div></div>
     </div>
+  `;
+
+  document.getElementById('metricasDash2').innerHTML = `
     <div class="metric">
       <div class="micon bg-warning"><i class="ti ti-gauge"></i></div>
       <div><div class="mlabel">Ocupação da capacidade</div><div class="mval">${ocupacaoPct !== null ? ocupacaoPct.toFixed(0) + '%' : '—'}</div></div>
     </div>
-  `;
-
-  document.getElementById('metricasDash2').innerHTML = `
     <div class="metric">
       <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
       <div><div class="mlabel">GMD atual (último período)</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
     </div>
     <div class="metric">
       <div class="micon bg-warning"><i class="ti ti-trending-up"></i></div>
-      <div><div class="mlabel">GMDT médio (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
+      <div><div class="mlabel">GMDT (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
     </div>
     <div class="metric">
       <div class="micon bg-info"><i class="ti ti-stack-2"></i></div>
       <div><div class="mlabel">Lotes cadastrados</div><div class="mval">${lotesNoFiltro.length}</div></div>
-    </div>
-    <div class="metric">
-      <div class="micon bg-info"><i class="ti ti-fence"></i></div>
-      <div><div class="mlabel">Mangas ocupadas</div><div class="mval">${mangasIds.size}</div></div>
     </div>
   `;
 
@@ -424,6 +423,7 @@ function renderLotesFazenda(ativos, lotesNoFiltro) {
   await checkAuth();
   showUserEmail();
   carregarFazendas();
+  carregarDashboardFazendas();
 })();
 </script>
 
