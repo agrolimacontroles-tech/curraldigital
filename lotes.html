@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -25,11 +26,12 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div class="subtoggle">
-    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de lotes</button>
+    <button class="stbtn active" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
+    <button class="stbtn" id="btnTabLista" onclick="mostrarAba('lista')">Lista de lotes</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar lote</button>
   </div>
 
-  <div id="abaLista">
+  <div id="abaLista" style="display:none">
     <div class="card">
       <div class="cardb table-wrap">
         <table>
@@ -80,6 +82,28 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
+
+  <div id="abaDashboard">
+    <div class="toolbar">
+      <select id="filtroLoteDash" onchange="renderDashboardLote()"><option value="">Todos os lotes</option></select>
+    </div>
+
+    <div class="metrics" id="metricasDashLote">
+      <div class="metric"><span class="spinner"></span></div>
+    </div>
+    <div class="metrics" id="metricasDashLote2" style="margin-top:-4px"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="card">
+        <div class="cardh"><i class="ti ti-chart-donut"></i> Composição do lote</div>
+        <div class="cardb" style="display:flex;justify-content:center"><div style="max-width:220px;width:100%"><canvas id="chartComposicaoLote"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="cardh"><i class="ti ti-building-warehouse"></i> Animais por fazenda</div>
+        <div class="cardb" id="conteudoFazendasLote"><span class="spinner"></span></div>
+      </div>
+    </div>
+  </div>
 `;
 
 let loteEditandoId = null;
@@ -87,10 +111,13 @@ let loteEditandoId = null;
 function mostrarAba(aba) {
   document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('abaDashboard').style.display = aba === 'dashboard' ? 'block' : 'none';
   document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  document.getElementById('btnTabDashboard').classList.toggle('active', aba === 'dashboard');
   if (aba === 'lista') carregarLotes();
   if (aba === 'cadastro') carregarFazendasNoSelect();
+  if (aba === 'dashboard') carregarDashboardLotes();
 }
 
 function limparFormulario() {
@@ -237,11 +264,168 @@ async function salvarLote() {
 
 document.getElementById('btnSalvarLote').addEventListener('click', salvarLote);
 
+// ---------- Dashboard ----------
+const PALETA_CATEGORIAS = {
+  'Bezerro': '#4a9eff', 'Bezerra': '#ff8fb3', 'Garrote': '#f0b840', 'Novilho': '#4dd4a0',
+  'Novilha': '#a87fe0', 'Boi': '#1a4a8a', 'Vaca': '#d63b6e', 'Touro': '#2d6e4e',
+  'Matrona': '#8a5a2b', 'Vaca seca': '#7a7a7a', 'Sem categoria': '#5a7fa0',
+};
+function categoriaLabelDash(c) { return c || 'Sem categoria'; }
+function corCategoriaDash(c) { return PALETA_CATEGORIAS[categoriaLabelDash(c)] || '#5a7fa0'; }
+
+let lotesCacheDash = [];
+let animaisCacheDash = [];
+let chartComposicaoLoteInstance = null;
+
+async function carregarDashboardLotes() {
+  const [{ data: lotes }, { data: animais }, { data: pesagens }] = await Promise.all([
+    supabaseClient.from('lotes').select('id, nome, fazenda_id').order('nome'),
+    supabaseClient.from('vw_animais_resumo').select('*'),
+    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+  ]);
+
+  lotesCacheDash = lotes || [];
+
+  const gmdPeriodoPorAnimal = new Map();
+  (pesagens || []).forEach(p => {
+    if (!gmdPeriodoPorAnimal.has(p.animal_id)) gmdPeriodoPorAnimal.set(p.animal_id, p.gmd_periodo);
+  });
+
+  animaisCacheDash = (animais || []).map(a => ({
+    ...a,
+    gmdt: a.gmd_atual,
+    gmd_ultimo: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
+  }));
+
+  const sel = document.getElementById('filtroLoteDash');
+  const valorAtual = sel.value;
+  sel.innerHTML = `<option value="">Todos os lotes</option>` +
+    lotesCacheDash.map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
+  if (valorAtual) sel.value = valorAtual;
+
+  renderDashboardLote();
+}
+
+function renderDashboardLote() {
+  const loteId = document.getElementById('filtroLoteDash').value;
+
+  const lotesNoFiltro = loteId ? lotesCacheDash.filter(l => l.id === loteId) : lotesCacheDash;
+  const ativos = animaisCacheDash.filter(a => a.status === 'ativo' && (!loteId || a.lote_id === loteId));
+
+  const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
+  const pesoMedio = ativos.length ? pesoTotal / ativos.length : 0;
+
+  const gmdValidos = ativos.filter(a => a.gmd_ultimo !== null).map(a => Number(a.gmd_ultimo));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+
+  const gmdtValidos = ativos.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
+
+  const fazendasNoLote = new Set(ativos.map(a => a.fazenda_id).filter(Boolean));
+
+  document.getElementById('metricasDashLote').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-stack-2"></i></div>
+      <div><div class="mlabel">Lotes</div><div class="mval">${lotesNoFiltro.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-tag"></i></div>
+      <div><div class="mlabel">Animais ativos</div><div class="mval">${ativos.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-success"><i class="ti ti-weight"></i></div>
+      <div><div class="mlabel">Peso total</div><div class="mval">${pesoTotal.toLocaleString('pt-BR')} kg</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-scale"></i></div>
+      <div><div class="mlabel">Peso médio</div><div class="mval">${pesoMedio.toFixed(0)} kg</div></div>
+    </div>
+  `;
+
+  document.getElementById('metricasDashLote2').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+      <div><div class="mlabel">Último GMD</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-trending-up"></i></div>
+      <div><div class="mlabel">GMDT (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
+      <div><div class="mlabel">Fazendas envolvidas</div><div class="mval">${fazendasNoLote.size}</div></div>
+    </div>
+  `;
+
+  renderComposicaoLote(ativos);
+  renderFazendasLote(ativos);
+}
+
+function renderComposicaoLote(ativos) {
+  const porCategoria = {};
+  ativos.forEach(a => {
+    const c = categoriaLabelDash(a.categoria);
+    porCategoria[c] = (porCategoria[c] || 0) + 1;
+  });
+  const categorias = Object.keys(porCategoria);
+
+  if (chartComposicaoLoteInstance) chartComposicaoLoteInstance.destroy();
+  const ctx = document.getElementById('chartComposicaoLote');
+  if (categorias.length === 0) {
+    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
+    return;
+  }
+
+  chartComposicaoLoteInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: categorias,
+      datasets: [{
+        data: categorias.map(c => porCategoria[c]),
+        backgroundColor: categorias.map(c => corCategoriaDash(c)),
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 10, font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderFazendasLote(ativos) {
+  const porFazenda = {};
+  ativos.forEach(a => {
+    const nome = a.fazenda_nome || 'Sem fazenda';
+    porFazenda[nome] = (porFazenda[nome] || 0) + 1;
+  });
+
+  const grupos = Object.entries(porFazenda).map(([nome, qtd]) => ({ nome, qtd }));
+  const maxQtd = Math.max(1, ...grupos.map(g => g.qtd));
+
+  document.getElementById('conteudoFazendasLote').innerHTML = grupos.length === 0
+    ? '<p style="color:var(--text-dim);font-size:13px">Nenhum animal ativo nessa seleção.</p>'
+    : grupos.map(g => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text-soft);min-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.nome}</span>
+          <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:${(g.qtd / maxQtd) * 100}%;background:var(--accent-bg)"></div>
+          </div>
+          <span style="font-size:12px;color:var(--text);min-width:24px;text-align:right">${g.qtd}</span>
+        </div>
+      `).join('');
+}
+
 (async function init() {
   await checkAuth();
   showUserEmail();
   document.getElementById('l_data_formacao').value = new Date().toISOString().slice(0, 10);
   carregarLotes();
+  carregarDashboardLotes();
 })();
 </script>
 
