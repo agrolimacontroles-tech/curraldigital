@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -22,13 +23,29 @@ document.getElementById('mainContent').innerHTML = `
       <div class="pagetitle">Painel</div>
       <div class="pagesub" id="dataAtual"></div>
     </div>
+    <div style="position:relative">
+      <button class="btn btn-secondary" id="btnFiltroFazendas" onclick="alternarPainelFiltro()">
+        <i class="ti ti-filter"></i> <span id="labelFiltroFazendas">Todas as fazendas</span> <i class="ti ti-chevron-down"></i>
+      </button>
+      <div id="painelFiltroFazendas" class="card" style="display:none;position:absolute;right:0;top:42px;z-index:30;min-width:220px;max-height:320px;overflow-y:auto">
+        <div class="cardb" id="listaFiltroFazendas"></div>
+      </div>
+    </div>
   </div>
 
   <div class="metrics" id="metricas">
     <div class="metric"><span class="spinner"></span></div>
   </div>
+  <div class="metrics" id="metricas2" style="margin-top:-4px"></div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficos"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficosTopo"></div>
+
+  <div class="card" id="cardEvolucao">
+    <div class="cardh"><i class="ti ti-trending-up"></i> Histórico de evolução do rebanho (últimos 12 meses)</div>
+    <div class="cardb"><canvas id="chartEvolucao" height="90"></canvas></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficosBaixo"></div>
 
   <div class="card">
     <div class="cardh"><i class="ti ti-clock"></i> Animais ativos — entradas mais recentes</div>
@@ -47,34 +64,156 @@ document.getElementById('mainContent').innerHTML = `
 
 document.getElementById('dataAtual').textContent = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
+const PALETA_CATEGORIAS = {
+  'Bezerro': '#4a9eff', 'Bezerra': '#ff8fb3', 'Garrote': '#f0b840', 'Novilho': '#4dd4a0',
+  'Novilha': '#a87fe0', 'Boi': '#1a4a8a', 'Vaca': '#d63b6e', 'Touro': '#2d6e4e',
+  'Matrona': '#8a5a2b', 'Vaca seca': '#7a7a7a', 'Sem categoria': '#5a7fa0',
+};
+
+let todosFazendaOptions = [];
+let fazendasSelecionadas = new Set();
+let animaisGlobalCache = [];
+let chartEvolucaoInstance = null;
+let chartComposicaoInstance = null;
+
+function carregarSelecaoFazendasSalva() {
+  try {
+    const salvas = JSON.parse(localStorage.getItem('curraldigital-painel-fazendas'));
+    if (Array.isArray(salvas)) return new Set(salvas);
+  } catch (e) { /* ignora */ }
+  return new Set();
+}
+
+function salvarSelecaoFazendas() {
+  localStorage.setItem('curraldigital-painel-fazendas', JSON.stringify([...fazendasSelecionadas]));
+}
+
+function alternarPainelFiltro() {
+  const painel = document.getElementById('painelFiltroFazendas');
+  painel.style.display = painel.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', (e) => {
+  const painel = document.getElementById('painelFiltroFazendas');
+  const btn = document.getElementById('btnFiltroFazendas');
+  if (painel && !painel.contains(e.target) && !btn.contains(e.target)) {
+    painel.style.display = 'none';
+  }
+});
+
+function renderFiltroFazendas() {
+  const todasMarcadas = fazendasSelecionadas.size === 0;
+  document.getElementById('listaFiltroFazendas').innerHTML = `
+    <label class="fcheck" style="padding-top:0;border-bottom:0.5px solid var(--divider);padding-bottom:8px;margin-bottom:6px">
+      <input type="checkbox" ${todasMarcadas ? 'checked' : ''} onchange="marcarTodasFazendasPainel(this.checked)"> <b>Todas as fazendas</b>
+    </label>
+    ${todosFazendaOptions.map(f => `
+      <label class="fcheck" style="padding-top:0">
+        <input type="checkbox" value="${f.id}" ${fazendasSelecionadas.has(f.id) ? 'checked' : ''} onchange="alternarFazendaPainel('${f.id}', this.checked)">
+        ${f.nome}
+      </label>
+    `).join('')}
+  `;
+
+  const label = todasMarcadas
+    ? 'Todas as fazendas'
+    : (fazendasSelecionadas.size === 1
+        ? todosFazendaOptions.find(f => fazendasSelecionadas.has(f.id))?.nome || '1 fazenda'
+        : `${fazendasSelecionadas.size} fazendas selecionadas`);
+  document.getElementById('labelFiltroFazendas').textContent = label;
+}
+
+function marcarTodasFazendasPainel(marcarTodas) {
+  fazendasSelecionadas = new Set();
+  salvarSelecaoFazendas();
+  renderFiltroFazendas();
+  renderPainelCompleto();
+}
+
+function alternarFazendaPainel(id, marcado) {
+  if (marcado) fazendasSelecionadas.add(id); else fazendasSelecionadas.delete(id);
+  salvarSelecaoFazendas();
+  renderFiltroFazendas();
+  renderPainelCompleto();
+}
+
+function categoriaLabel(c) { return c || 'Sem categoria'; }
+
+function corCategoria(c) {
+  return PALETA_CATEGORIAS[categoriaLabel(c)] || '#5a7fa0';
+}
+
 async function carregarPainel() {
   await checkAuth();
   showUserEmail();
 
-  // Métricas principais
-  const { data: animais } = await supabaseClient.from('vw_animais_resumo').select('*');
-  const { data: fazendas } = await supabaseClient.from('fazendas').select('id');
-  const { data: pesagensRecentes } = await supabaseClient
-    .from('pesagens')
-    .select('animal_id, data_pesagem, gmd_periodo')
-    .order('data_pesagem', { ascending: false });
+  const [{ data: animais }, { data: fazendas }, { data: pesagensTodas }] = await Promise.all([
+    supabaseClient.from('vw_animais_resumo').select('*'),
+    supabaseClient.from('fazendas').select('id, nome').order('nome'),
+    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+  ]);
 
-  // gmd_atual da view é o GMD acumulado desde a entrada — pra esse painel queremos
-  // o GMD do último intervalo entre pesagens (gmd_periodo da pesagem mais recente).
+  todosFazendaOptions = fazendas || [];
+  fazendasSelecionadas = carregarSelecaoFazendasSalva();
+  // remove da seleção salva qualquer fazenda que não exista mais
+  fazendasSelecionadas = new Set([...fazendasSelecionadas].filter(id => todosFazendaOptions.some(f => f.id === id)));
+  renderFiltroFazendas();
+
+  // gmd_atual da view é o GMD acumulado desde a entrada (= GMDT). O "Último GMD" (gmd_periodo
+  // da pesagem mais recente) vem separado da tabela pesagens.
   const gmdPeriodoPorAnimal = new Map();
-  (pesagensRecentes || []).forEach(p => {
-    if (!gmdPeriodoPorAnimal.has(p.animal_id)) gmdPeriodoPorAnimal.set(p.animal_id, p.gmd_periodo);
+  const dataUltimoPesoPorAnimal = new Map();
+  (pesagensTodas || []).forEach(p => {
+    if (!gmdPeriodoPorAnimal.has(p.animal_id)) {
+      gmdPeriodoPorAnimal.set(p.animal_id, p.gmd_periodo);
+      dataUltimoPesoPorAnimal.set(p.animal_id, p.data_pesagem);
+    }
   });
 
-  const todosComGmdPeriodo = (animais || []).map(a => ({
+  animaisGlobalCache = (animais || []).map(a => ({
     ...a,
-    gmd_atual: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
+    gmdt: a.gmd_atual,
+    gmd_ultimo: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
+    data_ultimo_peso: dataUltimoPesoPorAnimal.has(a.id) ? dataUltimoPesoPorAnimal.get(a.id) : a.data_entrada,
   }));
 
-  const ativos = todosComGmdPeriodo.filter(a => a.status === 'ativo');
+  renderPainelCompleto();
+}
+
+function listaFiltradaPainel() {
+  if (fazendasSelecionadas.size === 0) return animaisGlobalCache;
+  return animaisGlobalCache.filter(a => fazendasSelecionadas.has(a.fazenda_id));
+}
+
+function renderPainelCompleto() {
+  const todos = listaFiltradaPainel();
+  const ativos = todos.filter(a => a.status === 'ativo');
+
+  renderMetricas(todos, ativos);
+  renderComposicaoRankingTopo(ativos);
+  renderEvolucaoRebanho(todos);
+  renderSemPesagemEMangas(ativos);
+  renderTabelaRecentes(ativos);
+}
+
+function renderMetricas(todos, ativos) {
   const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
-  const gmdValidos = ativos.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
-  const gmdMedio = gmdValidos.length ? (gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length) : 0;
+  const pesoMedio = ativos.length ? pesoTotal / ativos.length : 0;
+
+  const gmdValidos = ativos.filter(a => a.gmd_ultimo !== null).map(a => Number(a.gmd_ultimo));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+
+  const gmdtValidos = ativos.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
+
+  const hoje = new Date();
+  const semPesagem30 = ativos.filter(a => {
+    if (!a.data_ultimo_peso) return false;
+    const dias = Math.round((hoje - new Date(a.data_ultimo_peso + 'T00:00:00')) / 86400000);
+    return dias > 30;
+  }).length;
+
+  const fazendasNoFiltro = fazendasSelecionadas.size === 0 ? todosFazendaOptions.length : fazendasSelecionadas.size;
 
   document.getElementById('metricas').innerHTML = `
     <div class="metric">
@@ -86,63 +225,217 @@ async function carregarPainel() {
       <div><div class="mlabel">Peso total</div><div class="mval">${pesoTotal.toLocaleString('pt-BR')} kg</div></div>
     </div>
     <div class="metric">
-      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
-      <div><div class="mlabel">GMD médio</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+      <div class="micon bg-info"><i class="ti ti-scale"></i></div>
+      <div><div class="mlabel">Peso médio do rebanho</div><div class="mval">${pesoMedio.toFixed(0)} kg</div></div>
     </div>
     <div class="metric">
       <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
-      <div><div class="mlabel">Fazendas</div><div class="mval">${(fazendas || []).length}</div></div>
+      <div><div class="mlabel">Fazendas</div><div class="mval">${fazendasNoFiltro}</div></div>
     </div>
   `;
 
-  // Animais por fazenda
-  const porFazenda = {};
-  ativos.forEach(a => {
-    const nome = a.fazenda_nome || 'Sem fazenda';
-    porFazenda[nome] = (porFazenda[nome] || 0) + 1;
-  });
-  const maxFazenda = Math.max(1, ...Object.values(porFazenda));
+  document.getElementById('metricas2').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+      <div><div class="mlabel">GMD médio (último período)</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-trending-up"></i></div>
+      <div><div class="mlabel">GMDT médio (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-danger"><i class="ti ti-calendar-off"></i></div>
+      <div><div class="mlabel">Sem pesagem há +30 dias</div><div class="mval">${semPesagem30}</div></div>
+    </div>
+  `;
+}
 
-  // Ocupação das mangas
+function renderComposicaoRankingTopo(ativos) {
+  // ---- Composição do rebanho (donut por categoria) ----
+  const porCategoria = {};
+  ativos.forEach(a => {
+    const c = categoriaLabel(a.categoria);
+    porCategoria[c] = (porCategoria[c] || 0) + 1;
+  });
+  const categorias = Object.keys(porCategoria);
+
+  // ---- Ranking maior GMD (top 10) ----
+  const ranking = [...ativos]
+    .filter(a => a.gmd_ultimo !== null)
+    .sort((a, b) => Number(b.gmd_ultimo) - Number(a.gmd_ultimo))
+    .slice(0, 10);
+
+  document.getElementById('graficosTopo').innerHTML = `
+    <div class="card">
+      <div class="cardh"><i class="ti ti-chart-donut"></i> Composição do rebanho</div>
+      <div class="cardb"><canvas id="chartComposicao" height="200"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="cardh"><i class="ti ti-trophy"></i> Ranking — maior ganho de peso (último GMD)</div>
+      <div class="cardb table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Brinco</th><th>Fazenda</th><th>Lote</th><th>GMD</th></tr></thead>
+          <tbody>
+            ${ranking.length === 0
+              ? '<tr class="empty-row"><td colspan="5">Sem pesagens suficientes ainda.</td></tr>'
+              : ranking.map((a, i) => `
+                <tr>
+                  <td>${i + 1}º</td>
+                  <td><b style="color:var(--text)">#${a.brinco}</b></td>
+                  <td>${a.fazenda_nome || '—'}</td>
+                  <td>${a.lote_nome || '—'}</td>
+                  <td style="color:var(--success)">${Number(a.gmd_ultimo).toFixed(2)} kg/d</td>
+                </tr>
+              `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  if (chartComposicaoInstance) chartComposicaoInstance.destroy();
+  const ctx = document.getElementById('chartComposicao');
+  if (categorias.length === 0) return;
+
+  chartComposicaoInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: categorias,
+      datasets: [{
+        data: categorias.map(c => porCategoria[c]),
+        backgroundColor: categorias.map(c => corCategoria(c)),
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: { position: 'right', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 12, font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+function renderEvolucaoRebanho(todos) {
+  const meses = [];
+  const hoje = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    meses.push(d);
+  }
+
+  const categoriasPresentes = new Set();
+  todos.forEach(a => categoriasPresentes.add(categoriaLabel(a.categoria)));
+  const categorias = [...categoriasPresentes];
+
+  const datasets = categorias.map(cat => {
+    const dados = meses.map(mesInicio => {
+      const fimMes = new Date(mesInicio.getFullYear(), mesInicio.getMonth() + 1, 0);
+      const limite = fimMes > hoje ? hoje : fimMes;
+
+      return todos.filter(a => {
+        if (categoriaLabel(a.categoria) !== cat) return false;
+        const entrada = new Date(a.data_entrada + 'T00:00:00');
+        if (entrada > limite) return false;
+        if (a.status === 'ativo') return true;
+        if (a.status === 'vendido' && a.data_venda) return new Date(a.data_venda + 'T00:00:00') > limite;
+        if (a.status === 'morto' && a.data_morte) return new Date(a.data_morte + 'T00:00:00') > limite;
+        return false;
+      }).length;
+    });
+
+    const cor = corCategoria(cat);
+    return { label: cat, data: dados, borderColor: cor, backgroundColor: cor, tension: 0.3, pointRadius: 2 };
+  });
+
+  if (chartEvolucaoInstance) chartEvolucaoInstance.destroy();
+  const ctx = document.getElementById('chartEvolucao');
+  const corEixo = getComputedStyle(document.documentElement).getPropertyValue('--text-dim');
+  const corGrid = getComputedStyle(document.documentElement).getPropertyValue('--divider');
+
+  chartEvolucaoInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: meses.map(d => d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })),
+      datasets,
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { color: corEixo, boxWidth: 12, font: { size: 11 } } },
+      },
+      scales: {
+        x: { ticks: { color: corEixo }, grid: { color: corGrid } },
+        y: { ticks: { color: corEixo }, grid: { color: corGrid }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+function renderSemPesagemEMangas(ativos) {
+  const hoje = new Date();
+  const faixas = [
+    { label: 'Até 15 dias', min: 0, max: 15, cor: 'var(--success)' },
+    { label: '16 a 30 dias', min: 16, max: 30, cor: 'var(--info)' },
+    { label: '31 a 60 dias', min: 31, max: 60, cor: 'var(--warning)' },
+    { label: '61 a 90 dias', min: 61, max: 90, cor: '#e0863a' },
+    { label: 'Mais de 90 dias', min: 91, max: Infinity, cor: 'var(--danger)' },
+  ];
+
+  const contagem = faixas.map(f => 0);
+  ativos.forEach(a => {
+    if (!a.data_ultimo_peso) return;
+    const dias = Math.round((hoje - new Date(a.data_ultimo_peso + 'T00:00:00')) / 86400000);
+    const idx = faixas.findIndex(f => dias >= f.min && dias <= f.max);
+    if (idx >= 0) contagem[idx]++;
+  });
+  const maxContagem = Math.max(1, ...contagem);
+
+  document.getElementById('graficosBaixo').innerHTML = `
+    <div class="card">
+      <div class="cardh"><i class="ti ti-calendar-off"></i> Animais sem pesagem recente</div>
+      <div class="cardb">
+        ${faixas.map((f, i) => `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:12px;color:var(--text-soft);min-width:110px">${f.label}</span>
+            <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+              <div style="height:100%;border-radius:3px;width:${(contagem[i] / maxContagem) * 100}%;background:${f.cor}"></div>
+            </div>
+            <span style="font-size:12px;color:var(--text);min-width:24px;text-align:right">${contagem[i]}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="card" id="cardOcupacaoMangas">
+      <div class="cardh">Ocupação das mangas</div>
+      <div class="cardb" id="conteudoOcupacaoMangas"><span class="spinner"></span></div>
+    </div>
+  `;
+
+  carregarOcupacaoMangas();
+}
+
+async function carregarOcupacaoMangas() {
   const { data: mangas } = await supabaseClient.from('vw_mangas_ocupacao').select('*');
 
-  document.getElementById('graficos').innerHTML = `
-    <div class="card">
-      <div class="cardh">Animais por fazenda</div>
-      <div class="cardb">
-        ${Object.entries(porFazenda).length === 0
-          ? '<p style="color:var(--text-dim);font-size:13px">Nenhum animal cadastrado ainda.</p>'
-          : Object.entries(porFazenda).map(([nome, qtd]) => `
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <span style="font-size:12px;color:var(--text-soft);min-width:90px">${nome}</span>
-              <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
-                <div style="height:100%;border-radius:3px;width:${qtd / maxFazenda * 100}%;background:var(--accent-bg)"></div>
-              </div>
-              <span style="font-size:12px;color:var(--text);min-width:24px;text-align:right">${qtd}</span>
-            </div>
-          `).join('')}
-      </div>
-    </div>
-    <div class="card">
-      <div class="cardh">Ocupação das mangas</div>
-      <div class="cardb">
-        ${(mangas || []).length === 0
-          ? '<p style="color:var(--text-dim);font-size:13px">Nenhuma manga cadastrada ainda.</p>'
-          : mangas.map(m => `
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <span style="font-size:12px;color:var(--text-soft);min-width:90px">Manga ${m.numero}</span>
-              <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
-                <div style="height:100%;border-radius:3px;width:${m.percentual_ocupacao || 0}%;background:var(--warning)"></div>
-              </div>
-              <span style="font-size:12px;color:var(--text);min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
-            </div>
-          `).join('')}
-      </div>
-    </div>
-  `;
+  const mangasFiltradas = fazendasSelecionadas.size === 0
+    ? (mangas || [])
+    : (mangas || []).filter(m => fazendasSelecionadas.has(m.fazenda_id));
 
-  // Tabela de animais ativos recentes
-  const recentes = ativos
+  document.getElementById('conteudoOcupacaoMangas').innerHTML = mangasFiltradas.length === 0
+    ? '<p style="color:var(--text-dim);font-size:13px">Nenhuma manga cadastrada nessa seleção.</p>'
+    : mangasFiltradas.map(m => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text-soft);min-width:90px">Manga ${m.numero}</span>
+          <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:${m.percentual_ocupacao || 0}%;background:var(--warning)"></div>
+          </div>
+          <span style="font-size:12px;color:var(--text);min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
+        </div>
+      `).join('');
+}
+
+function renderTabelaRecentes(ativos) {
+  const recentes = [...ativos]
     .sort((a, b) => new Date(b.data_entrada) - new Date(a.data_entrada))
     .slice(0, 8);
 
@@ -154,7 +447,7 @@ async function carregarPainel() {
         <td>${a.fazenda_nome || '—'}</td>
         <td>${a.lote_nome || '—'}</td>
         <td>${Number(a.peso_atual).toLocaleString('pt-BR')} kg</td>
-        <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) : '—'}</td>
+        <td>${a.gmd_ultimo !== null ? Number(a.gmd_ultimo).toFixed(2) : '—'}</td>
         <td>${a.dias_no_ciclo || 0} dias</td>
       </tr>
     `).join('');
