@@ -244,10 +244,23 @@ function renderComposicaoRankingTopo(ativos) {
   });
   const categorias = Object.keys(porCategoria);
 
-  // ---- Ranking maior GMD (top 10) ----
-  const ranking = [...ativos]
-    .filter(a => a.gmd_ultimo !== null)
-    .sort((a, b) => Number(b.gmd_ultimo) - Number(a.gmd_ultimo))
+  // ---- Ranking de lotes por maior ganho de peso ----
+  const porLote = {};
+  ativos.forEach(a => {
+    const chave = a.lote_id || 'sem-lote';
+    if (!porLote[chave]) {
+      porLote[chave] = { lote_nome: a.lote_nome || 'Sem lote', fazenda_nome: a.fazenda_nome || '—', qtd: 0, somaGmd: 0, qtdGmd: 0, ganhoTotal: 0 };
+    }
+    const grupo = porLote[chave];
+    grupo.qtd++;
+    if (a.gmd_ultimo !== null) { grupo.somaGmd += Number(a.gmd_ultimo); grupo.qtdGmd++; }
+    grupo.ganhoTotal += Number(a.ganho_total) || 0;
+  });
+
+  const ranking = Object.values(porLote)
+    .filter(l => l.qtdGmd > 0)
+    .map(l => ({ ...l, gmdMedio: l.somaGmd / l.qtdGmd }))
+    .sort((a, b) => b.gmdMedio - a.gmdMedio)
     .slice(0, 10);
 
   document.getElementById('graficosTopo').innerHTML = `
@@ -256,20 +269,21 @@ function renderComposicaoRankingTopo(ativos) {
       <div class="cardb" style="display:flex;justify-content:center"><div style="max-width:220px;width:100%"><canvas id="chartComposicao"></canvas></div></div>
     </div>
     <div class="card">
-      <div class="cardh"><i class="ti ti-trophy"></i> Ranking — maior ganho de peso (último GMD)</div>
+      <div class="cardh"><i class="ti ti-trophy"></i> Ranking de lotes — maior ganho de peso</div>
       <div class="cardb table-wrap">
         <table>
-          <thead><tr><th>#</th><th>Brinco</th><th>Fazenda</th><th>Lote</th><th>GMD</th></tr></thead>
+          <thead><tr><th>#</th><th>Lote</th><th>Fazenda</th><th>Animais</th><th>GMD médio</th><th>Ganho total</th></tr></thead>
           <tbody>
             ${ranking.length === 0
-              ? '<tr class="empty-row"><td colspan="5">Sem pesagens suficientes ainda.</td></tr>'
-              : ranking.map((a, i) => `
+              ? '<tr class="empty-row"><td colspan="6">Sem pesagens suficientes ainda.</td></tr>'
+              : ranking.map((l, i) => `
                 <tr>
                   <td>${i + 1}º</td>
-                  <td><b style="color:var(--text)">#${a.brinco}</b></td>
-                  <td>${a.fazenda_nome || '—'}</td>
-                  <td>${a.lote_nome || '—'}</td>
-                  <td style="color:var(--success)">${Number(a.gmd_ultimo).toFixed(2)} kg/d</td>
+                  <td><b style="color:var(--text)">${l.lote_nome}</b></td>
+                  <td>${l.fazenda_nome}</td>
+                  <td>${l.qtd}</td>
+                  <td style="color:var(--success)">${l.gmdMedio.toFixed(2)} kg/d</td>
+                  <td>${l.ganhoTotal.toLocaleString('pt-BR')} kg</td>
                 </tr>
               `).join('')}
           </tbody>
