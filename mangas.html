@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 </head>
 <body>
 
@@ -25,19 +27,20 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div class="subtoggle">
-    <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de mangas</button>
+    <button class="stbtn active" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
+    <button class="stbtn" id="btnTabLista" onclick="mostrarAba('lista')">Lista de mangas</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar manga</button>
   </div>
 
-  <div id="abaLista">
+  <div id="abaLista" style="display:none">
     <div class="card">
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Manga</th><th>Fazenda</th><th>Tipo de estrutura</th><th>Capacidade</th><th>Ocupação atual</th><th>Status</th><th></th></tr>
+            <tr><th>Manga</th><th>Fazenda</th><th>Animais ativos</th><th></th></tr>
           </thead>
           <tbody id="tabelaMangas">
-            <tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="4"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -55,21 +58,34 @@ document.getElementById('mainContent').innerHTML = `
             <label>Fazenda *</label>
             <select id="m_fazenda_id"><option value="">Carregando fazendas...</option></select>
           </div>
-          <div class="fgroup"><label>Capacidade (animais) *</label><input id="m_capacidade" type="number" placeholder="50"></div>
-          <div class="fgroup">
-            <label>Tipo de estrutura</label>
-            <select id="m_tipo_estrutura">
-              <option value="">Selecione...</option>
-              <option>Curral</option>
-              <option>Piquete</option>
-              <option>Galpão</option>
-            </select>
-          </div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" id="btnSalvarManga">Cadastrar manga</button>
           <button class="btn btn-secondary" onclick="limparFormulario()">Limpar</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaDashboard">
+    <div class="toolbar">
+      <select id="filtroFazendaDashManga" onchange="aoMudarFazendaDashManga()"><option value="">Todas as fazendas</option></select>
+      <select id="filtroMangaDash" onchange="renderDashboardManga()"><option value="">Todas as mangas</option></select>
+    </div>
+
+    <div class="metrics" id="metricasDashManga">
+      <div class="metric"><span class="spinner"></span></div>
+    </div>
+    <div class="metrics" id="metricasDashManga2" style="margin-top:-4px"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="card">
+        <div class="cardh"><i class="ti ti-chart-donut"></i> Composição da manga</div>
+        <div class="cardb" style="display:flex;justify-content:center"><div style="max-width:220px;width:100%"><canvas id="chartComposicaoManga"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="cardh"><i class="ti ti-stack-2"></i> Animais por lote</div>
+        <div class="cardb" id="conteudoLotesManga"><span class="spinner"></span></div>
       </div>
     </div>
   </div>
@@ -80,18 +96,19 @@ let mangaEditandoId = null;
 function mostrarAba(aba) {
   document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('abaDashboard').style.display = aba === 'dashboard' ? 'block' : 'none';
   document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  document.getElementById('btnTabDashboard').classList.toggle('active', aba === 'dashboard');
   if (aba === 'lista') carregarMangas();
   if (aba === 'cadastro') carregarFazendasNoSelect();
+  if (aba === 'dashboard') carregarDashboardMangas();
 }
 
 function limparFormulario() {
   mangaEditandoId = null;
   document.getElementById('m_numero').value = '';
   document.getElementById('m_fazenda_id').value = '';
-  document.getElementById('m_capacidade').value = '';
-  document.getElementById('m_tipo_estrutura').value = '';
   document.getElementById('btnSalvarManga').textContent = 'Cadastrar manga';
   document.getElementById('msgCadastro').className = 'msg';
 }
@@ -131,47 +148,38 @@ async function carregarFazendasNoSelect() {
 async function carregarMangas() {
   const { data: mangas, error } = await supabaseClient
     .from('vw_mangas_ocupacao')
-    .select('*')
+    .select('id, numero, fazenda_nome')
     .order('numero');
 
   if (error) {
-    document.getElementById('tabelaMangas').innerHTML = `<tr class="empty-row"><td colspan="7">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaMangas').innerHTML = `<tr class="empty-row"><td colspan="4">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
   document.getElementById('totalMangas').textContent = `${mangas.length} manga${mangas.length === 1 ? '' : 's'} cadastrada${mangas.length === 1 ? '' : 's'}`;
 
   if (mangas.length === 0) {
-    document.getElementById('tabelaMangas').innerHTML = '<tr class="empty-row"><td colspan="7">Nenhuma manga cadastrada ainda.</td></tr>';
+    document.getElementById('tabelaMangas').innerHTML = '<tr class="empty-row"><td colspan="4">Nenhuma manga cadastrada ainda.</td></tr>';
     return;
   }
 
-  // busca tipo_estrutura (não vem na view) direto da tabela mangas
-  const { data: mangasDetalhe } = await supabaseClient.from('mangas').select('id, tipo_estrutura');
-  const tipoMap = {};
-  (mangasDetalhe || []).forEach(m => { tipoMap[m.id] = m.tipo_estrutura; });
+  const { data: animais } = await supabaseClient.from('animais').select('manga_id, status');
+  const contagem = {};
+  (animais || []).forEach(a => {
+    if (a.status === 'ativo' && a.manga_id) contagem[a.manga_id] = (contagem[a.manga_id] || 0) + 1;
+  });
 
-  document.getElementById('tabelaMangas').innerHTML = mangas.map(m => {
-    const pct = m.percentual_ocupacao || 0;
-    let statusBadge = '<span class="badge bg-success">Disponível</span>';
-    if (pct >= 90) statusBadge = '<span class="badge bg-danger">Cheia</span>';
-    else if (pct >= 70) statusBadge = '<span class="badge bg-warning">Quase cheia</span>';
-
-    return `
+  document.getElementById('tabelaMangas').innerHTML = mangas.map(m => `
       <tr>
         <td><b style="color:var(--text)">Manga ${m.numero}</b></td>
         <td>${m.fazenda_nome || '—'}</td>
-        <td>${tipoMap[m.id] || '—'}</td>
-        <td>${m.capacidade}</td>
-        <td>${m.ocupacao_atual || 0} (${pct}%)</td>
-        <td>${statusBadge}</td>
+        <td>${contagem[m.id] || 0}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-secondary" style="padding:4px 10px" onclick="editarManga('${m.id}')"><i class="ti ti-pencil"></i></button>
           <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirManga('${m.id}','Manga ${m.numero}')"><i class="ti ti-trash"></i></button>
         </td>
       </tr>
-    `;
-  }).join('');
+    `).join('');
 }
 
 async function editarManga(id) {
@@ -186,8 +194,6 @@ async function editarManga(id) {
 
   document.getElementById('m_numero').value = m.numero || '';
   document.getElementById('m_fazenda_id').value = m.fazenda_id || '';
-  document.getElementById('m_capacidade').value = m.capacidade || '';
-  document.getElementById('m_tipo_estrutura').value = m.tipo_estrutura || '';
   document.getElementById('btnSalvarManga').textContent = 'Salvar alterações';
 }
 
@@ -205,27 +211,20 @@ async function excluirManga(id, nome) {
 async function salvarManga() {
   const numero = document.getElementById('m_numero').value.trim();
   const fazendaId = document.getElementById('m_fazenda_id').value;
-  const capacidade = document.getElementById('m_capacidade').value;
 
   if (!numero) { showMsg('O número da manga é obrigatório.', 'error'); return; }
   if (!fazendaId) { showMsg('Selecione a fazenda.', 'error'); return; }
-  if (!capacidade) { showMsg('A capacidade é obrigatória.', 'error'); return; }
-
-  const payload = {
-    numero,
-    fazenda_id: fazendaId,
-    capacidade: Number(capacidade),
-    tipo_estrutura: document.getElementById('m_tipo_estrutura').value || null,
-  };
 
   const btn = document.getElementById('btnSalvarManga');
   btn.disabled = true;
 
   let error;
   if (mangaEditandoId) {
-    ({ error } = await supabaseClient.from('mangas').update(payload).eq('id', mangaEditandoId));
+    // não mexe em capacidade/tipo_estrutura — campos removidos da UI, preserva o que já estava salvo
+    ({ error } = await supabaseClient.from('mangas').update({ numero, fazenda_id: fazendaId }).eq('id', mangaEditandoId));
   } else {
-    ({ error } = await supabaseClient.from('mangas').insert(payload));
+    // capacidade não é mais controlada pela UI, mas a coluna ainda exige um valor — usa um valor alto neutro
+    ({ error } = await supabaseClient.from('mangas').insert({ numero, fazenda_id: fazendaId, capacidade: 9999, tipo_estrutura: null }));
   }
 
   btn.disabled = false;
@@ -245,10 +244,209 @@ async function salvarManga() {
 
 document.getElementById('btnSalvarManga').addEventListener('click', salvarManga);
 
+// ---------- Dashboard ----------
+const PALETA_CATEGORIAS = {
+  'Bezerro': '#4a9eff', 'Bezerra': '#ff8fb3', 'Garrote': '#f0b840', 'Novilho': '#4dd4a0',
+  'Novilha': '#a87fe0', 'Boi': '#1a4a8a', 'Vaca': '#d63b6e', 'Touro': '#2d6e4e',
+  'Matrona': '#8a5a2b', 'Vaca seca': '#7a7a7a', 'Sem categoria': '#5a7fa0',
+};
+function categoriaLabelDash(c) { return c || 'Sem categoria'; }
+function corCategoriaDash(c) { return PALETA_CATEGORIAS[categoriaLabelDash(c)] || '#5a7fa0'; }
+
+let mangasCacheDash = [];
+let fazendasCacheDashManga = [];
+let animaisCacheDash = [];
+let chartComposicaoMangaInstance = null;
+
+async function carregarDashboardMangas() {
+  const [{ data: mangas }, { data: fazendas }, { data: animais }, { data: pesagens }] = await Promise.all([
+    supabaseClient.from('mangas').select('id, numero, fazenda_id').order('numero'),
+    supabaseClient.from('fazendas').select('id, nome').order('nome'),
+    supabaseClient.from('vw_animais_resumo').select('*'),
+    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+  ]);
+
+  mangasCacheDash = mangas || [];
+  fazendasCacheDashManga = fazendas || [];
+
+  const gmdPeriodoPorAnimal = new Map();
+  (pesagens || []).forEach(p => {
+    if (!gmdPeriodoPorAnimal.has(p.animal_id)) gmdPeriodoPorAnimal.set(p.animal_id, p.gmd_periodo);
+  });
+
+  animaisCacheDash = (animais || []).map(a => ({
+    ...a,
+    gmdt: a.gmd_atual,
+    gmd_ultimo: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
+  }));
+
+  const selFazenda = document.getElementById('filtroFazendaDashManga');
+  selFazenda.innerHTML = `<option value="">Todas as fazendas</option>` +
+    fazendasCacheDashManga.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  popularSelectMangasDash();
+  renderDashboardManga();
+}
+
+function popularSelectMangasDash() {
+  const fazendaId = document.getElementById('filtroFazendaDashManga').value;
+  const sel = document.getElementById('filtroMangaDash');
+  const valorAtual = sel.value;
+
+  const mangasDisponiveis = fazendaId ? mangasCacheDash.filter(m => m.fazenda_id === fazendaId) : mangasCacheDash;
+
+  sel.innerHTML = `<option value="">Todas as mangas</option>` +
+    mangasDisponiveis.map(m => `<option value="${m.id}">Manga ${m.numero}</option>`).join('');
+
+  if (valorAtual && mangasDisponiveis.some(m => m.id === valorAtual)) sel.value = valorAtual;
+}
+
+function aoMudarFazendaDashManga() {
+  popularSelectMangasDash();
+  renderDashboardManga();
+}
+
+function renderDashboardManga() {
+  const fazendaId = document.getElementById('filtroFazendaDashManga').value;
+  const mangaId = document.getElementById('filtroMangaDash').value;
+
+  const mangasNoFiltro = mangasCacheDash.filter(m =>
+    (!fazendaId || m.fazenda_id === fazendaId) && (!mangaId || m.id === mangaId)
+  );
+
+  const todosNoFiltro = animaisCacheDash.filter(a =>
+    (!fazendaId || a.fazenda_id === fazendaId) && (!mangaId || a.manga_id === mangaId)
+  );
+  const ativos = todosNoFiltro.filter(a => a.status === 'ativo');
+  const mortos = todosNoFiltro.filter(a => a.status === 'morto');
+
+  const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
+  const pesoMedio = ativos.length ? pesoTotal / ativos.length : 0;
+
+  const gmdValidos = ativos.filter(a => a.gmd_ultimo !== null).map(a => Number(a.gmd_ultimo));
+  const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
+
+  const gmdtValidos = ativos.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
+
+  const fazendasNaManga = new Set(ativos.map(a => a.fazenda_id).filter(Boolean));
+
+  document.getElementById('metricasDashManga').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-fence"></i></div>
+      <div><div class="mlabel">Mangas</div><div class="mval">${mangasNoFiltro.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-tag"></i></div>
+      <div><div class="mlabel">Animais ativos</div><div class="mval">${ativos.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-success"><i class="ti ti-weight"></i></div>
+      <div><div class="mlabel">Peso total</div><div class="mval">${pesoTotal.toLocaleString('pt-BR')} kg</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-scale"></i></div>
+      <div><div class="mlabel">Peso médio</div><div class="mval">${pesoMedio.toFixed(0)} kg</div></div>
+    </div>
+  `;
+
+  document.getElementById('metricasDashManga2').innerHTML = `
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+      <div><div class="mlabel">Último GMD</div><div class="mval">${gmdMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-warning"><i class="ti ti-trending-up"></i></div>
+      <div><div class="mlabel">GMDT (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-danger"><i class="ti ti-skull"></i></div>
+      <div><div class="mlabel">Mortos</div><div class="mval">${mortos.length}</div></div>
+    </div>
+    <div class="metric">
+      <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
+      <div><div class="mlabel">Fazendas envolvidas</div><div class="mval">${fazendasNaManga.size}</div></div>
+    </div>
+  `;
+
+  renderComposicaoManga(ativos);
+  renderLotesManga(ativos);
+}
+
+function renderComposicaoManga(ativos) {
+  const porCategoria = {};
+  ativos.forEach(a => {
+    const c = categoriaLabelDash(a.categoria);
+    porCategoria[c] = (porCategoria[c] || 0) + 1;
+  });
+  const categorias = Object.keys(porCategoria);
+
+  if (chartComposicaoMangaInstance) chartComposicaoMangaInstance.destroy();
+  const ctx = document.getElementById('chartComposicaoManga');
+  if (categorias.length === 0) {
+    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
+    return;
+  }
+
+  chartComposicaoMangaInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: categorias,
+      datasets: [{
+        data: categorias.map(c => porCategoria[c]),
+        backgroundColor: categorias.map(c => corCategoriaDash(c)),
+        borderWidth: 0,
+      }],
+    },
+    plugins: [ChartDataLabels],
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 10, font: { size: 10 } } },
+        datalabels: {
+          color: '#fff',
+          font: { weight: 'bold', size: 11 },
+          formatter: (valor, contexto) => {
+            const total = contexto.dataset.data.reduce((s, v) => s + v, 0);
+            const pct = total > 0 ? (valor / total) * 100 : 0;
+            return pct >= 5 ? pct.toFixed(0) + '%' : '';
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderLotesManga(ativos) {
+  const porLote = {};
+  ativos.forEach(a => {
+    const nome = a.lote_nome || 'Sem lote';
+    porLote[nome] = (porLote[nome] || 0) + 1;
+  });
+
+  const grupos = Object.entries(porLote).map(([nome, qtd]) => ({ nome, qtd }));
+  const maxQtd = Math.max(1, ...grupos.map(g => g.qtd));
+
+  document.getElementById('conteudoLotesManga').innerHTML = grupos.length === 0
+    ? '<p style="color:var(--text-dim);font-size:13px">Nenhum animal ativo nessa seleção.</p>'
+    : grupos.map(g => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text-soft);min-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.nome}</span>
+          <div style="background:var(--track-bg);border-radius:3px;height:14px;flex:1;overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:${(g.qtd / maxQtd) * 100}%;background:var(--accent-bg)"></div>
+          </div>
+          <span style="font-size:12px;color:var(--text);min-width:24px;text-align:right">${g.qtd}</span>
+        </div>
+      `).join('');
+}
+
 (async function init() {
   await checkAuth();
   showUserEmail();
   carregarMangas();
+  carregarDashboardMangas();
 })();
 </script>
 
