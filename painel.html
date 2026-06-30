@@ -41,25 +41,11 @@ document.getElementById('mainContent').innerHTML = `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficosTopo"></div>
 
   <div class="card" id="cardEvolucao">
-    <div class="cardh"><i class="ti ti-trending-up"></i> Histórico de evolução do rebanho (últimos 12 meses)</div>
+    <div class="cardh"><i class="ti ti-trending-up"></i> Histórico de evolução do rebanho</div>
     <div class="cardb"><canvas id="chartEvolucao" height="90"></canvas></div>
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="graficosBaixo"></div>
-
-  <div class="card">
-    <div class="cardh"><i class="ti ti-clock"></i> Animais ativos — entradas mais recentes</div>
-    <div class="cardb table-wrap">
-      <table>
-        <thead>
-          <tr><th>Brinco</th><th>Fazenda</th><th>Lote</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th></tr>
-        </thead>
-        <tbody id="tabelaRecentes">
-          <tr class="empty-row"><td colspan="6"><span class="spinner"></span> Carregando...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
 `;
 
 document.getElementById('dataAtual').textContent = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -193,7 +179,6 @@ function renderPainelCompleto() {
   renderComposicaoRankingTopo(ativos);
   renderEvolucaoRebanho(todos);
   renderSemPesagemEMangas(ativos);
-  renderTabelaRecentes(ativos);
 }
 
 function renderMetricas(todos, ativos) {
@@ -268,7 +253,7 @@ function renderComposicaoRankingTopo(ativos) {
   document.getElementById('graficosTopo').innerHTML = `
     <div class="card">
       <div class="cardh"><i class="ti ti-chart-donut"></i> Composição do rebanho</div>
-      <div class="cardb"><canvas id="chartComposicao" height="200"></canvas></div>
+      <div class="cardb" style="display:flex;justify-content:center"><div style="max-width:220px;width:100%"><canvas id="chartComposicao"></canvas></div></div>
     </div>
     <div class="card">
       <div class="cardh"><i class="ti ti-trophy"></i> Ranking — maior ganho de peso (último GMD)</div>
@@ -308,19 +293,36 @@ function renderComposicaoRankingTopo(ativos) {
       }],
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
       plugins: {
-        legend: { position: 'right', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 12, font: { size: 11 } } },
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 10, font: { size: 10 } } },
       },
     },
   });
 }
 
 function renderEvolucaoRebanho(todos) {
-  const meses = [];
   const hoje = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-    meses.push(d);
+  const meses = [];
+
+  if (todos.length === 0) {
+    meses.push(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+  } else {
+    const datasEntrada = todos.map(a => new Date(a.data_entrada + 'T00:00:00'));
+    const primeiraEntrada = new Date(Math.min(...datasEntrada));
+    const inicio = new Date(primeiraEntrada.getFullYear(), primeiraEntrada.getMonth(), 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    let cursor = new Date(inicio);
+    // limite de segurança pra não gerar um eixo absurdamente longo se a data de entrada estiver muito no passado
+    let limiteSeguranca = 60;
+    while (cursor <= fim && limiteSeguranca > 0) {
+      meses.push(new Date(cursor));
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      limiteSeguranca--;
+    }
   }
 
   const categoriasPresentes = new Set();
@@ -432,25 +434,6 @@ async function carregarOcupacaoMangas() {
           <span style="font-size:12px;color:var(--text);min-width:38px;text-align:right">${m.percentual_ocupacao || 0}%</span>
         </div>
       `).join('');
-}
-
-function renderTabelaRecentes(ativos) {
-  const recentes = [...ativos]
-    .sort((a, b) => new Date(b.data_entrada) - new Date(a.data_entrada))
-    .slice(0, 8);
-
-  document.getElementById('tabelaRecentes').innerHTML = recentes.length === 0
-    ? '<tr class="empty-row"><td colspan="6">Nenhum animal cadastrado ainda. <a href="animais.html">Cadastrar o primeiro animal →</a></td></tr>'
-    : recentes.map(a => `
-      <tr>
-        <td><b style="color:var(--text)">#${a.brinco}</b></td>
-        <td>${a.fazenda_nome || '—'}</td>
-        <td>${a.lote_nome || '—'}</td>
-        <td>${Number(a.peso_atual).toLocaleString('pt-BR')} kg</td>
-        <td>${a.gmd_ultimo !== null ? Number(a.gmd_ultimo).toFixed(2) : '—'}</td>
-        <td>${a.dias_no_ciclo || 0} dias</td>
-      </tr>
-    `).join('');
 }
 
 carregarPainel();
