@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 </head>
 <body>
 
@@ -85,6 +86,7 @@ document.getElementById('mainContent').innerHTML = `
 
   <div id="abaDashboard">
     <div class="toolbar">
+      <select id="filtroFazendaDashLote" onchange="aoMudarFazendaDashLote()"><option value="">Todas as fazendas</option></select>
       <select id="filtroLoteDash" onchange="renderDashboardLote()"><option value="">Todos os lotes</option></select>
     </div>
 
@@ -274,17 +276,20 @@ function categoriaLabelDash(c) { return c || 'Sem categoria'; }
 function corCategoriaDash(c) { return PALETA_CATEGORIAS[categoriaLabelDash(c)] || '#5a7fa0'; }
 
 let lotesCacheDash = [];
+let fazendasCacheDashLote = [];
 let animaisCacheDash = [];
 let chartComposicaoLoteInstance = null;
 
 async function carregarDashboardLotes() {
-  const [{ data: lotes }, { data: animais }, { data: pesagens }] = await Promise.all([
+  const [{ data: lotes }, { data: fazendas }, { data: animais }, { data: pesagens }] = await Promise.all([
     supabaseClient.from('lotes').select('id, nome, fazenda_id').order('nome'),
+    supabaseClient.from('fazendas').select('id, nome').order('nome'),
     supabaseClient.from('vw_animais_resumo').select('*'),
     supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
   ]);
 
   lotesCacheDash = lotes || [];
+  fazendasCacheDashLote = fazendas || [];
 
   const gmdPeriodoPorAnimal = new Map();
   (pesagens || []).forEach(p => {
@@ -297,20 +302,45 @@ async function carregarDashboardLotes() {
     gmd_ultimo: gmdPeriodoPorAnimal.has(a.id) ? gmdPeriodoPorAnimal.get(a.id) : null,
   }));
 
+  const selFazenda = document.getElementById('filtroFazendaDashLote');
+  selFazenda.innerHTML = `<option value="">Todas as fazendas</option>` +
+    fazendasCacheDashLote.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  popularSelectLotesDash();
+  renderDashboardLote();
+}
+
+function popularSelectLotesDash() {
+  const fazendaId = document.getElementById('filtroFazendaDashLote').value;
   const sel = document.getElementById('filtroLoteDash');
   const valorAtual = sel.value;
-  sel.innerHTML = `<option value="">Todos os lotes</option>` +
-    lotesCacheDash.map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
-  if (valorAtual) sel.value = valorAtual;
 
+  const lotesDisponiveis = fazendaId ? lotesCacheDash.filter(l => l.fazenda_id === fazendaId) : lotesCacheDash;
+
+  sel.innerHTML = `<option value="">Todos os lotes</option>` +
+    lotesDisponiveis.map(l => `<option value="${l.id}">${l.nome}</option>`).join('');
+
+  if (valorAtual && lotesDisponiveis.some(l => l.id === valorAtual)) sel.value = valorAtual;
+}
+
+function aoMudarFazendaDashLote() {
+  popularSelectLotesDash();
   renderDashboardLote();
 }
 
 function renderDashboardLote() {
+  const fazendaId = document.getElementById('filtroFazendaDashLote').value;
   const loteId = document.getElementById('filtroLoteDash').value;
 
-  const lotesNoFiltro = loteId ? lotesCacheDash.filter(l => l.id === loteId) : lotesCacheDash;
-  const ativos = animaisCacheDash.filter(a => a.status === 'ativo' && (!loteId || a.lote_id === loteId));
+  const lotesNoFiltro = lotesCacheDash.filter(l =>
+    (!fazendaId || l.fazenda_id === fazendaId) && (!loteId || l.id === loteId)
+  );
+
+  const todosNoFiltro = animaisCacheDash.filter(a =>
+    (!fazendaId || a.fazenda_id === fazendaId) && (!loteId || a.lote_id === loteId)
+  );
+  const ativos = todosNoFiltro.filter(a => a.status === 'ativo');
+  const mortos = todosNoFiltro.filter(a => a.status === 'morto');
 
   const pesoTotal = ativos.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
   const pesoMedio = ativos.length ? pesoTotal / ativos.length : 0;
@@ -352,6 +382,10 @@ function renderDashboardLote() {
       <div><div class="mlabel">GMDT (desde a entrada)</div><div class="mval">${gmdtMedio.toFixed(2)} kg/dia</div></div>
     </div>
     <div class="metric">
+      <div class="micon bg-danger"><i class="ti ti-skull"></i></div>
+      <div><div class="mlabel">Mortos</div><div class="mval">${mortos.length}</div></div>
+    </div>
+    <div class="metric">
       <div class="micon bg-info"><i class="ti ti-building-warehouse"></i></div>
       <div><div class="mlabel">Fazendas envolvidas</div><div class="mval">${fazendasNoLote.size}</div></div>
     </div>
@@ -386,12 +420,22 @@ function renderComposicaoLote(ativos) {
         borderWidth: 0,
       }],
     },
+    plugins: [ChartDataLabels],
     options: {
       responsive: true,
       maintainAspectRatio: true,
       aspectRatio: 1,
       plugins: {
         legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-soft'), boxWidth: 10, font: { size: 10 } } },
+        datalabels: {
+          color: '#fff',
+          font: { weight: 'bold', size: 11 },
+          formatter: (valor, contexto) => {
+            const total = contexto.dataset.data.reduce((s, v) => s + v, 0);
+            const pct = total > 0 ? (valor / total) * 100 : 0;
+            return pct >= 5 ? pct.toFixed(0) + '%' : '';
+          },
+        },
       },
     },
   });
