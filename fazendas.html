@@ -36,10 +36,10 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Fazenda</th><th>Proprietário</th><th>Município/UF</th><th>Atividade</th><th>Capacidade</th><th>Animais</th><th></th></tr>
+            <tr><th>Fazenda</th><th>Proprietário</th><th>Município/UF</th><th>Atividade</th><th>Capacidade</th><th>Área total</th><th>Área produtiva</th><th>Animais</th><th></th></tr>
           </thead>
           <tbody id="tabelaFazendas">
-            <tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -67,6 +67,11 @@ document.getElementById('mainContent').innerHTML = `
             </select>
           </div>
           <div class="fgroup"><label>Capacidade (animais)</label><input id="f_capacidade" type="number" placeholder="150"></div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Área total (ha)</label><input id="f_area_total_ha" type="number" step="0.01" placeholder="500"></div>
+          <div class="fgroup"><label>Área produtiva (ha)</label><input id="f_area_produtiva_ha" type="number" step="0.01" placeholder="380"></div>
+          <div class="fgroup"><label>Animais sem cadastro</label><input id="f_animais_sem_cadastro" type="number" min="0" placeholder="0"></div>
         </div>
       </div>
     </div>
@@ -127,7 +132,7 @@ function mostrarAba(aba) {
 
 function limparFormulario() {
   fazendaEditandoId = null;
-  ['f_nome','f_proprietario','f_atividade','f_capacidade','f_municipio','f_estado','f_endereco'].forEach(id => {
+  ['f_nome','f_proprietario','f_atividade','f_capacidade','f_area_total_ha','f_area_produtiva_ha','f_animais_sem_cadastro','f_municipio','f_estado','f_endereco'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('btnSalvarFazenda').textContent = 'Cadastrar fazenda';
@@ -173,7 +178,9 @@ async function carregarFazendas() {
       <td>${f.municipio ? f.municipio + (f.estado ? '/' + f.estado : '') : '—'}</td>
       <td>${f.atividade ? `<span class="badge bg-info">${f.atividade}</span>` : '—'}</td>
       <td>${f.capacidade || '—'}</td>
-      <td>${contagem[f.id] || 0}</td>
+      <td>${f.area_total_ha ? Number(f.area_total_ha).toLocaleString('pt-BR') + ' ha' : '—'}</td>
+      <td>${f.area_produtiva_ha ? Number(f.area_produtiva_ha).toLocaleString('pt-BR') + ' ha' : '—'}</td>
+      <td>${(contagem[f.id] || 0) + (f.animais_sem_cadastro || 0)}${f.animais_sem_cadastro ? ` <span style="color:var(--text-dim);font-size:11px">(+${f.animais_sem_cadastro} s/cadastro)</span>` : ''}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary" style="padding:4px 10px" onclick="editarFazenda('${f.id}')"><i class="ti ti-pencil"></i></button>
         <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirFazenda('${f.id}','${f.nome.replace(/'/g, "\\'")}')"><i class="ti ti-trash"></i></button>
@@ -191,6 +198,9 @@ async function editarFazenda(id) {
   document.getElementById('f_proprietario').value = f.proprietario || '';
   document.getElementById('f_atividade').value = f.atividade || '';
   document.getElementById('f_capacidade').value = f.capacidade || '';
+  document.getElementById('f_area_total_ha').value = f.area_total_ha || '';
+  document.getElementById('f_area_produtiva_ha').value = f.area_produtiva_ha || '';
+  document.getElementById('f_animais_sem_cadastro').value = f.animais_sem_cadastro || '';
   document.getElementById('f_municipio').value = f.municipio || '';
   document.getElementById('f_estado').value = f.estado || '';
   document.getElementById('f_endereco').value = f.endereco || '';
@@ -218,6 +228,9 @@ async function salvarFazenda() {
     proprietario: document.getElementById('f_proprietario').value.trim() || null,
     atividade: document.getElementById('f_atividade').value || null,
     capacidade: document.getElementById('f_capacidade').value ? Number(document.getElementById('f_capacidade').value) : null,
+    area_total_ha: document.getElementById('f_area_total_ha').value ? Number(document.getElementById('f_area_total_ha').value) : null,
+    area_produtiva_ha: document.getElementById('f_area_produtiva_ha').value ? Number(document.getElementById('f_area_produtiva_ha').value) : null,
+    animais_sem_cadastro: document.getElementById('f_animais_sem_cadastro').value ? Number(document.getElementById('f_animais_sem_cadastro').value) : 0,
     municipio: document.getElementById('f_municipio').value.trim() || null,
     estado: document.getElementById('f_estado').value.trim().toUpperCase() || null,
     endereco: document.getElementById('f_endereco').value.trim() || null,
@@ -307,8 +320,11 @@ function renderDashboardFazenda() {
   const gmdtValidos = ativos.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
   const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
 
+  const semCadastroTotal = fazendasNoFiltro.reduce((s, f) => s + (Number(f.animais_sem_cadastro) || 0), 0);
+  const animaisTotalComSemCadastro = ativos.length + semCadastroTotal;
+
   const capacidadeTotal = fazendasNoFiltro.reduce((s, f) => s + (Number(f.capacidade) || 0), 0);
-  const ocupacaoPct = capacidadeTotal > 0 ? Math.min(100, (ativos.length / capacidadeTotal) * 100) : null;
+  const ocupacaoPct = capacidadeTotal > 0 ? Math.min(100, (animaisTotalComSemCadastro / capacidadeTotal) * 100) : null;
 
   const lotesNoFiltro = fazendaId ? lotesCacheDash.filter(l => l.fazenda_id === fazendaId) : lotesCacheDash;
 
@@ -319,7 +335,7 @@ function renderDashboardFazenda() {
     </div>
     <div class="metric">
       <div class="micon bg-info"><i class="ti ti-tag"></i></div>
-      <div><div class="mlabel">Animais ativos</div><div class="mval">${ativos.length}</div></div>
+      <div><div class="mlabel">Animais ativos</div><div class="mval">${animaisTotalComSemCadastro}</div>${semCadastroTotal ? `<div style="font-size:10px;color:var(--text-dim)">${ativos.length} cadastrados + ${semCadastroTotal} s/cadastro</div>` : ''}</div>
     </div>
     <div class="metric">
       <div class="micon bg-success"><i class="ti ti-weight"></i></div>

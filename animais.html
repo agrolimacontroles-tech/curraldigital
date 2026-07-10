@@ -123,15 +123,20 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardh">Origem e datas</div>
       <div class="cardb">
         <div class="frow cols-3">
-          <div class="fgroup"><label>Data de nascimento</label><input id="a_data_nascimento" type="date"></div>
+          <div class="fgroup"><label>Data de nascimento</label><input id="a_data_nascimento" type="date" onchange="recalcularIdade()"></div>
           <div class="fgroup"><label>Data de desmame</label><input id="a_data_desmame" type="date"></div>
-          <div class="fgroup"><label>Data de entrada *</label><input id="a_data_entrada" type="date"></div>
+          <div class="fgroup"><label>Data de entrada *</label><input id="a_data_entrada" type="date" onchange="recalcularIdade()"></div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Idade na entrada (meses) — calculado</label><input id="a_idade_meses" type="text" readonly style="opacity:0.7"></div>
+          <div class="fgroup"></div>
+          <div class="fgroup"></div>
         </div>
         <div class="frow">
           <div class="fgroup"><label>Produtor de origem</label><input id="a_produtor_origem" placeholder="Nome do produtor / fazenda de origem"></div>
           <div class="fgroup">
             <label>Compra de origem</label>
-            <select id="a_compra_id"><option value="">Sem vínculo / compra individual</option></select>
+            <select id="a_compra_id" onchange="carregarInfoComissaoCompra(this.value)"><option value="">Sem vínculo / compra individual</option></select>
           </div>
         </div>
       </div>
@@ -141,13 +146,13 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardh">Compra e custos</div>
       <div class="cardb">
         <div class="frow cols-3">
-          <div class="fgroup"><label>Peso de entrada (kg) *</label><input id="a_peso_entrada" type="number" step="0.01" placeholder="220" oninput="recalcularCustoTotal()"></div>
+          <div class="fgroup"><label>Peso de entrada (kg) *</label><input id="a_peso_entrada" type="number" step="0.01" placeholder="220" oninput="recalcularCustoTotal(); recalcularIdade()"></div>
           <div class="fgroup"><label>Preço de compra (R$/kg)</label><input id="a_preco_compra_kg" type="number" step="0.01" placeholder="14.50" oninput="recalcularCustoTotal()"></div>
           <div class="fgroup"><label>Frete (R$)</label><input id="a_frete_compra" type="number" step="0.01" placeholder="0" oninput="recalcularCustoTotal()"></div>
         </div>
         <div class="frow cols-3">
           <div class="fgroup"><label>Custo total (R$) — calculado pelo sistema</label><input id="a_custo_total" type="number" step="0.01" placeholder="Calculado automaticamente" readonly style="opacity:0.7"></div>
-          <div class="fgroup"></div>
+          <div class="fgroup"><label>Custo por kg (R$) — com rateio de comissão</label><input id="a_custo_por_kg" type="text" readonly style="opacity:0.7"></div>
           <div class="fgroup"></div>
         </div>
       </div>
@@ -387,6 +392,9 @@ function limparFormulario() {
   });
   document.getElementById('a_castrado').checked = false;
   document.getElementById('a_custo_total').value = '';
+  document.getElementById('a_custo_por_kg').value = '';
+  document.getElementById('a_idade_meses').value = '';
+  infoComissaoCompra = null;
   document.getElementById('a_data_entrada').value = new Date().toISOString().slice(0, 10);
   document.getElementById('btnSalvarAnimal').textContent = 'Cadastrar animal';
   document.getElementById('msgCadastro').className = 'msg';
@@ -461,13 +469,56 @@ async function carregarLotesEMangas(fazendaId, lotePreSelecionado, mangaPreSelec
   if (mangaPreSelecionado) selManga.value = mangaPreSelecionado;
 }
 
+function recalcularIdade() {
+  const nascimento = document.getElementById('a_data_nascimento').value;
+  const entrada = document.getElementById('a_data_entrada').value;
+  const el = document.getElementById('a_idade_meses');
+  if (!nascimento || !entrada) { el.value = ''; return; }
+
+  const dNasc = new Date(nascimento + 'T00:00:00');
+  const dEntr = new Date(entrada + 'T00:00:00');
+  if (dEntr < dNasc) { el.value = ''; return; }
+
+  let meses = (dEntr.getFullYear() - dNasc.getFullYear()) * 12 + (dEntr.getMonth() - dNasc.getMonth());
+  if (dEntr.getDate() < dNasc.getDate()) meses--;
+  el.value = Math.max(0, meses) + ' meses';
+}
+
+// Guarda a comissão da compra vinculada e o peso dos OUTROS animais já ligados a ela,
+// pra ratear a comissão por peso entre todos os animais da compra (esse animal incluso).
+let infoComissaoCompra = null;
+
+async function carregarInfoComissaoCompra(compraId) {
+  if (!compraId) { infoComissaoCompra = null; recalcularCustoTotal(); return; }
+
+  const [{ data: compra }, { data: outrosAnimais }] = await Promise.all([
+    supabaseClient.from('compras').select('valor_comissao').eq('id', compraId).single(),
+    supabaseClient.from('animais').select('peso_entrada').eq('compra_id', compraId).neq('id', animalEditandoId || '00000000-0000-0000-0000-000000000000'),
+  ]);
+
+  infoComissaoCompra = {
+    valorComissao: Number(compra?.valor_comissao) || 0,
+    pesoOutrosAnimais: (outrosAnimais || []).reduce((s, a) => s + (Number(a.peso_entrada) || 0), 0),
+  };
+  recalcularCustoTotal();
+}
+
 function recalcularCustoTotal() {
   const peso = parseFloat(document.getElementById('a_peso_entrada').value) || 0;
   const precoKg = parseFloat(document.getElementById('a_preco_compra_kg').value) || 0;
   const frete = parseFloat(document.getElementById('a_frete_compra').value) || 0;
-  if (peso && precoKg) {
-    document.getElementById('a_custo_total').value = (peso * precoKg + frete).toFixed(2);
+
+  const custoBase = (peso && precoKg) ? (peso * precoKg + frete) : 0;
+  document.getElementById('a_custo_total').value = custoBase ? custoBase.toFixed(2) : '';
+
+  let comissaoRateada = 0;
+  if (infoComissaoCompra && infoComissaoCompra.valorComissao > 0 && peso > 0) {
+    const pesoTotalCompra = infoComissaoCompra.pesoOutrosAnimais + peso;
+    if (pesoTotalCompra > 0) comissaoRateada = infoComissaoCompra.valorComissao * (peso / pesoTotalCompra);
   }
+
+  const custoComComissao = custoBase + comissaoRateada;
+  document.getElementById('a_custo_por_kg').value = (peso && custoComComissao) ? 'R$ ' + (custoComComissao / peso).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
 }
 
 // ---------- Lista ----------
@@ -582,6 +633,8 @@ async function editarAnimal(id) {
   document.getElementById('a_custo_total').value = a.custo_total || '';
   document.getElementById('a_observacoes').value = a.observacoes || '';
   document.getElementById('btnSalvarAnimal').textContent = 'Salvar alterações';
+  recalcularIdade();
+  await carregarInfoComissaoCompra(a.compra_id || '');
 }
 
 async function excluirAnimal(id, brinco) {

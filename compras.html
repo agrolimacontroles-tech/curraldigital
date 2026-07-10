@@ -34,10 +34,10 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Data</th><th>Vendedor</th><th>NF</th><th>Valor total</th><th>Frete</th><th>Pagamento</th><th>Animais</th><th>Peso total</th><th>Situação</th><th></th></tr>
+            <tr><th>Data</th><th>Vendedor</th><th>Valor total</th><th>Frete</th><th>Animais</th><th>Peso total</th><th>Comissão</th><th></th></tr>
           </thead>
           <tbody id="tabelaCompras">
-            <tr class="empty-row"><td colspan="10"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="8"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -53,7 +53,6 @@ document.getElementById('mainContent').innerHTML = `
         <div class="frow cols-3">
           <div class="fgroup"><label>Data da compra *</label><input id="c_data_compra" type="date"></div>
           <div class="fgroup"><label>Vendedor / Produtor</label><input id="c_vendedor" placeholder="Nome do vendedor"></div>
-          <div class="fgroup"><label>Nota fiscal</label><input id="c_nota_fiscal" placeholder="Número da NF"></div>
         </div>
       </div>
     </div>
@@ -62,30 +61,10 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardh">Valores</div>
       <div class="cardb">
         <div class="frow cols-3">
-          <div class="fgroup"><label>Valor total (R$) *</label><input id="c_valor_total" type="number" step="0.01" placeholder="45000" oninput="atualizarPreviaParcelas()"></div>
+          <div class="fgroup"><label>Valor total (R$) *</label><input id="c_valor_total" type="number" step="0.01" placeholder="45000"></div>
           <div class="fgroup"><label>Frete total (R$)</label><input id="c_frete_total" type="number" step="0.01" placeholder="0"></div>
-          <div class="fgroup">
-            <label>Forma de pagamento *</label>
-            <select id="c_forma_pagamento" onchange="alternarParcelamento()">
-              <option value="">Selecione...</option>
-              <option value="Vista">À vista</option>
-              <option value="Parcelado">Parcelado</option>
-            </select>
-          </div>
+          <div class="fgroup"><label>Valor de comissão (R$)</label><input id="c_valor_comissao" type="number" step="0.01" placeholder="0"></div>
         </div>
-      </div>
-    </div>
-
-    <div class="card" id="cardParcelamento" style="display:none">
-      <div class="cardh">Parcelamento</div>
-      <div class="cardb">
-        <div class="frow cols-3">
-          <div class="fgroup"><label>Quantidade de parcelas</label><input id="c_qtd_parcelas" type="number" min="1" value="2" oninput="atualizarPreviaParcelas()"></div>
-          <div class="fgroup"><label>1º vencimento</label><input id="c_primeiro_vencimento" type="date" oninput="atualizarPreviaParcelas()"></div>
-          <div class="fgroup"><label>Intervalo entre parcelas (dias)</label><input id="c_intervalo_dias" type="number" min="1" value="30" oninput="atualizarPreviaParcelas()"></div>
-        </div>
-        <button class="btn btn-secondary" onclick="gerarParcelas()" style="margin-bottom:10px"><i class="ti ti-refresh"></i> Gerar / atualizar parcelas</button>
-        <div id="previaParcelas"></div>
       </div>
     </div>
 
@@ -102,40 +81,9 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
-
-  <!-- Modal: gestão de parcelas -->
-  <div class="modal-overlay" id="modalParcelas" style="display:none">
-    <div class="modal-box" style="max-width:560px">
-      <div class="modal-head">
-        <span id="modalParcelasTitulo">Parcelas</span>
-        <button class="modal-close" onclick="fecharModal('modalParcelas')">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="msgParcelas" class="msg"></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>#</th><th>Valor</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
-            <tbody id="tabelaParcelas"><tr class="empty-row"><td colspan="5">Carregando...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="cardh" style="padding-left:0;margin-top:14px">Adicionar parcela manual</div>
-        <div class="frow cols-3" style="margin-top:8px">
-          <div class="fgroup"><label>Nº</label><input id="np_numero" type="number" min="1"></div>
-          <div class="fgroup"><label>Valor (R$)</label><input id="np_valor" type="number" step="0.01"></div>
-          <div class="fgroup"><label>Vencimento</label><input id="np_vencimento" type="date"></div>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <button class="btn btn-primary" onclick="adicionarParcelaManual()">Adicionar parcela</button>
-        <button class="btn btn-secondary" onclick="fecharModal('modalParcelas')">Fechar</button>
-      </div>
-    </div>
-  </div>
 `;
 
 let compraEditandoId = null;
-let parcelasState = [];
-let compraAtualParcelasId = null;
 
 // ---------- Navegação ----------
 function mostrarAba(aba) {
@@ -148,17 +96,10 @@ function mostrarAba(aba) {
 
 function limparFormulario() {
   compraEditandoId = null;
-  parcelasState = [];
-  ['c_vendedor','c_nota_fiscal','c_valor_total','c_frete_total','c_observacoes'].forEach(id => {
+  ['c_vendedor','c_valor_total','c_frete_total','c_valor_comissao','c_observacoes'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  document.getElementById('c_forma_pagamento').value = '';
   document.getElementById('c_data_compra').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('c_qtd_parcelas').value = 2;
-  document.getElementById('c_intervalo_dias').value = 30;
-  document.getElementById('c_primeiro_vencimento').value = '';
-  document.getElementById('cardParcelamento').style.display = 'none';
-  document.getElementById('previaParcelas').innerHTML = '';
   document.getElementById('btnSalvarCompra').textContent = 'Cadastrar compra';
   document.getElementById('msgCadastro').className = 'msg';
 }
@@ -170,59 +111,6 @@ function showMsg(elId, text, type) {
   setTimeout(() => { el.className = 'msg'; }, 4000);
 }
 
-function alternarParcelamento() {
-  const parcelado = document.getElementById('c_forma_pagamento').value === 'Parcelado';
-  document.getElementById('cardParcelamento').style.display = (parcelado && !compraEditandoId) ? 'block' : 'none';
-}
-
-// ---------- Geração de parcelas (preview editável) ----------
-function gerarParcelas() {
-  const valorTotal = parseFloat(document.getElementById('c_valor_total').value) || 0;
-  const qtd = parseInt(document.getElementById('c_qtd_parcelas').value) || 1;
-  const primeiroVenc = document.getElementById('c_primeiro_vencimento').value;
-  const intervalo = parseInt(document.getElementById('c_intervalo_dias').value) || 30;
-
-  if (!valorTotal) { alert('Informe o valor total da compra antes de gerar as parcelas.'); return; }
-  if (!primeiroVenc) { alert('Informe a data do primeiro vencimento.'); return; }
-
-  const valorParcela = Math.round((valorTotal / qtd) * 100) / 100;
-  parcelasState = [];
-  const base = new Date(primeiroVenc + 'T00:00:00');
-
-  for (let i = 0; i < qtd; i++) {
-    const venc = new Date(base);
-    venc.setDate(venc.getDate() + intervalo * i);
-    parcelasState.push({
-      numero: i + 1,
-      valor: i === qtd - 1 ? Math.round((valorTotal - valorParcela * (qtd - 1)) * 100) / 100 : valorParcela,
-      vencimento: venc.toISOString().slice(0, 10),
-    });
-  }
-  renderPreviaParcelas();
-}
-
-function atualizarPreviaParcelas() {
-  // só re-renderiza se já existir uma prévia gerada, pra refletir mudança de valor total
-  if (parcelasState.length > 0) gerarParcelas();
-}
-
-function renderPreviaParcelas() {
-  document.getElementById('previaParcelas').innerHTML = `
-    <table class="mini-table">
-      <thead><tr><th>#</th><th>Valor (R$)</th><th>Vencimento</th></tr></thead>
-      <tbody>
-        ${parcelasState.map((p, i) => `
-          <tr>
-            <td>${p.numero}</td>
-            <td><input type="number" step="0.01" value="${p.valor}" style="width:100px" onchange="parcelasState[${i}].valor = parseFloat(this.value) || 0"></td>
-            <td><input type="date" value="${p.vencimento}" onchange="parcelasState[${i}].vencimento = this.value"></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-}
-
 // ---------- Lista ----------
 async function carregarCompras() {
   const { data: compras, error } = await supabaseClient
@@ -231,49 +119,32 @@ async function carregarCompras() {
     .order('data_compra', { ascending: false });
 
   if (error) {
-    document.getElementById('tabelaCompras').innerHTML = `<tr class="empty-row"><td colspan="10">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaCompras').innerHTML = `<tr class="empty-row"><td colspan="8">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
   document.getElementById('totalCompras').textContent = `${compras.length} compra${compras.length === 1 ? '' : 's'} registrada${compras.length === 1 ? '' : 's'}`;
 
   if (compras.length === 0) {
-    document.getElementById('tabelaCompras').innerHTML = '<tr class="empty-row"><td colspan="10">Nenhuma compra cadastrada ainda.</td></tr>';
+    document.getElementById('tabelaCompras').innerHTML = '<tr class="empty-row"><td colspan="8">Nenhuma compra cadastrada ainda.</td></tr>';
     return;
   }
 
-  document.getElementById('tabelaCompras').innerHTML = compras.map(c => {
-    let situacao = '<span class="badge bg-info">À vista</span>';
-    if (c.forma_pagamento === 'Parcelado') {
-      if (c.parcelas_total === 0) situacao = '<span class="badge bg-warning">Sem parcelas geradas</span>';
-      else if (c.parcelas_pagas >= c.parcelas_total) situacao = '<span class="badge bg-success">Pago</span>';
-      else if (c.parcelas_pagas > 0) situacao = '<span class="badge bg-warning">Parcial</span>';
-      else situacao = '<span class="badge bg-danger">Pendente</span>';
-    }
-
-    const acaoParcelas = c.forma_pagamento === 'Parcelado' ? `
-      <button class="btn btn-secondary" style="padding:4px 10px" title="Gerenciar parcelas" onclick="abrirModalParcelas('${c.id}','${(c.vendedor || 'compra').replace(/'/g, "\\'")}')"><i class="ti ti-calendar-stats"></i></button>
-    ` : '';
-
-    return `
+  document.getElementById('tabelaCompras').innerHTML = compras.map(c => `
       <tr>
         <td>${new Date(c.data_compra + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
         <td><b style="color:var(--text)">${c.vendedor || '—'}</b></td>
-        <td>${c.nota_fiscal || '—'}</td>
         <td>${c.valor_total !== null ? 'R$ ' + Number(c.valor_total).toLocaleString('pt-BR') : '—'}</td>
         <td>${c.frete_total ? 'R$ ' + Number(c.frete_total).toLocaleString('pt-BR') : '—'}</td>
-        <td>${c.forma_pagamento || '—'}</td>
         <td>${c.qtd_animais || 0}</td>
         <td>${Number(c.peso_total_entrada || 0).toLocaleString('pt-BR')} kg</td>
-        <td>${situacao}</td>
+        <td>${c.valor_comissao ? 'R$ ' + Number(c.valor_comissao).toLocaleString('pt-BR') : '—'}</td>
         <td style="white-space:nowrap">
-          ${acaoParcelas}
           <button class="btn btn-secondary" style="padding:4px 10px" title="Editar" onclick="editarCompra('${c.id}')"><i class="ti ti-pencil"></i></button>
           <button class="btn btn-danger" style="padding:4px 10px" title="Excluir" onclick="excluirCompra('${c.id}','${(c.vendedor || 'compra').replace(/'/g, "\\'")}')"><i class="ti ti-trash"></i></button>
         </td>
       </tr>
-    `;
-  }).join('');
+    `).join('');
 }
 
 // ---------- CRUD compra ----------
@@ -286,12 +157,10 @@ async function editarCompra(id) {
 
   document.getElementById('c_data_compra').value = c.data_compra || '';
   document.getElementById('c_vendedor').value = c.vendedor || '';
-  document.getElementById('c_nota_fiscal').value = c.nota_fiscal || '';
   document.getElementById('c_valor_total').value = c.valor_total || '';
   document.getElementById('c_frete_total').value = c.frete_total || '';
-  document.getElementById('c_forma_pagamento').value = c.forma_pagamento || '';
+  document.getElementById('c_valor_comissao').value = c.valor_comissao || '';
   document.getElementById('c_observacoes').value = c.observacoes || '';
-  document.getElementById('cardParcelamento').style.display = 'none'; // parcelas de compra existente: gerenciar pelo modal na lista
   document.getElementById('btnSalvarCompra').textContent = 'Salvar alterações';
 }
 
@@ -302,7 +171,7 @@ async function excluirCompra(id, vendedor) {
     return;
   }
 
-  if (!confirm(`Excluir a compra de "${vendedor}"? Isso também remove as parcelas vinculadas.`)) return;
+  if (!confirm(`Excluir a compra de "${vendedor}"?`)) return;
 
   const { error } = await supabaseClient.from('compras').delete().eq('id', id);
   if (error) {
@@ -315,23 +184,16 @@ async function excluirCompra(id, vendedor) {
 async function salvarCompra() {
   const dataCompra = document.getElementById('c_data_compra').value;
   const valorTotal = document.getElementById('c_valor_total').value;
-  const formaPagamento = document.getElementById('c_forma_pagamento').value;
 
   if (!dataCompra) { showMsg('msgCadastro', 'A data da compra é obrigatória.', 'error'); return; }
   if (!valorTotal) { showMsg('msgCadastro', 'O valor total é obrigatório.', 'error'); return; }
-  if (!formaPagamento) { showMsg('msgCadastro', 'Selecione a forma de pagamento.', 'error'); return; }
-  if (formaPagamento === 'Parcelado' && !compraEditandoId && parcelasState.length === 0) {
-    showMsg('msgCadastro', 'Clique em "Gerar / atualizar parcelas" antes de salvar.', 'error');
-    return;
-  }
 
   const payload = {
     data_compra: dataCompra,
     vendedor: document.getElementById('c_vendedor').value.trim() || null,
-    nota_fiscal: document.getElementById('c_nota_fiscal').value.trim() || null,
     valor_total: Number(valorTotal),
     frete_total: document.getElementById('c_frete_total').value ? Number(document.getElementById('c_frete_total').value) : 0,
-    forma_pagamento: formaPagamento,
+    valor_comissao: document.getElementById('c_valor_comissao').value ? Number(document.getElementById('c_valor_comissao').value) : 0,
     observacoes: document.getElementById('c_observacoes').value.trim() || null,
   };
 
@@ -344,29 +206,12 @@ async function salvarCompra() {
     if (error) { showMsg('msgCadastro', 'Erro ao salvar: ' + error.message, 'error'); return; }
     showMsg('msgCadastro', 'Compra atualizada com sucesso!', 'success');
   } else {
-    const { data: nova, error } = await supabaseClient.from('compras').insert(payload).select('id').single();
+    const { error } = await supabaseClient.from('compras').insert(payload).select('id').single();
+    btn.disabled = false;
     if (error) {
-      btn.disabled = false;
       showMsg('msgCadastro', 'Erro ao salvar: ' + error.message, 'error');
       return;
     }
-
-    if (formaPagamento === 'Parcelado' && parcelasState.length > 0) {
-      const parcelasPayload = parcelasState.map(p => ({
-        compra_id: nova.id,
-        numero_parcela: p.numero,
-        valor: p.valor,
-        vencimento: p.vencimento,
-      }));
-      const { error: errorParcelas } = await supabaseClient.from('compras_parcelas').insert(parcelasPayload);
-      if (errorParcelas) {
-        btn.disabled = false;
-        showMsg('msgCadastro', 'Compra criada, mas houve erro ao gerar as parcelas: ' + errorParcelas.message, 'error');
-        return;
-      }
-    }
-
-    btn.disabled = false;
     showMsg('msgCadastro', 'Compra cadastrada com sucesso!', 'success');
   }
 
@@ -375,104 +220,6 @@ async function salvarCompra() {
 }
 
 document.getElementById('btnSalvarCompra').addEventListener('click', salvarCompra);
-
-// ---------- Modal: gestão de parcelas ----------
-async function abrirModalParcelas(compraId, vendedor) {
-  compraAtualParcelasId = compraId;
-  document.getElementById('modalParcelasTitulo').textContent = `Parcelas — ${vendedor}`;
-  document.getElementById('np_numero').value = '';
-  document.getElementById('np_valor').value = '';
-  document.getElementById('np_vencimento').value = '';
-  document.getElementById('msgParcelas').className = 'msg';
-  document.getElementById('modalParcelas').style.display = 'flex';
-  await carregarParcelasModal();
-}
-
-async function carregarParcelasModal() {
-  const { data: parcelas, error } = await supabaseClient
-    .from('compras_parcelas')
-    .select('*')
-    .eq('compra_id', compraAtualParcelasId)
-    .order('numero_parcela');
-
-  if (error) {
-    document.getElementById('tabelaParcelas').innerHTML = `<tr class="empty-row"><td colspan="5">Erro: ${error.message}</td></tr>`;
-    return;
-  }
-
-  document.getElementById('np_numero').value = parcelas.length + 1;
-
-  if (parcelas.length === 0) {
-    document.getElementById('tabelaParcelas').innerHTML = '<tr class="empty-row"><td colspan="5">Nenhuma parcela cadastrada.</td></tr>';
-    return;
-  }
-
-  document.getElementById('tabelaParcelas').innerHTML = parcelas.map(p => `
-    <tr>
-      <td>${p.numero_parcela}</td>
-      <td>R$ ${Number(p.valor).toLocaleString('pt-BR')}</td>
-      <td>${new Date(p.vencimento + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-      <td>${p.pago
-        ? `<span class="badge bg-success">Pago${p.data_pagamento ? ' em ' + new Date(p.data_pagamento + 'T00:00:00').toLocaleDateString('pt-BR') : ''}</span>`
-        : '<span class="badge bg-danger">Pendente</span>'}</td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-secondary" style="padding:4px 10px" onclick="togglePagamentoParcela('${p.id}', ${p.pago})">
-          <i class="ti ${p.pago ? 'ti-rotate-2' : 'ti-check'}"></i>
-        </button>
-        <button class="btn btn-danger" style="padding:4px 10px" onclick="excluirParcela('${p.id}')"><i class="ti ti-trash"></i></button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function togglePagamentoParcela(parcelaId, pagoAtual) {
-  const { error } = await supabaseClient.from('compras_parcelas').update({
-    pago: !pagoAtual,
-    data_pagamento: !pagoAtual ? new Date().toISOString().slice(0, 10) : null,
-  }).eq('id', parcelaId);
-
-  if (error) { showMsg('msgParcelas', 'Erro: ' + error.message, 'error'); return; }
-  carregarParcelasModal();
-  carregarCompras();
-}
-
-async function excluirParcela(parcelaId) {
-  if (!confirm('Excluir essa parcela?')) return;
-  const { error } = await supabaseClient.from('compras_parcelas').delete().eq('id', parcelaId);
-  if (error) { showMsg('msgParcelas', 'Erro: ' + error.message, 'error'); return; }
-  carregarParcelasModal();
-  carregarCompras();
-}
-
-async function adicionarParcelaManual() {
-  const numero = document.getElementById('np_numero').value;
-  const valor = document.getElementById('np_valor').value;
-  const vencimento = document.getElementById('np_vencimento').value;
-
-  if (!numero || !valor || !vencimento) {
-    showMsg('msgParcelas', 'Preencha número, valor e vencimento.', 'error');
-    return;
-  }
-
-  const { error } = await supabaseClient.from('compras_parcelas').insert({
-    compra_id: compraAtualParcelasId,
-    numero_parcela: Number(numero),
-    valor: Number(valor),
-    vencimento,
-  });
-
-  if (error) { showMsg('msgParcelas', 'Erro: ' + error.message, 'error'); return; }
-
-  document.getElementById('np_valor').value = '';
-  document.getElementById('np_vencimento').value = '';
-  carregarParcelasModal();
-  carregarCompras();
-}
-
-// ---------- Modal genérico ----------
-function fecharModal(modalId) {
-  document.getElementById(modalId).style.display = 'none';
-}
 
 (async function init() {
   await checkAuth();

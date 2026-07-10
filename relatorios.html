@@ -52,6 +52,11 @@ document.getElementById('mainContent').innerHTML = `
     </select>
     <select id="filtroMes" onchange="carregarFiltroDatas(this.value); aplicarFiltros()"><option value="">Todos os meses</option></select>
     <select id="filtroData" onchange="aplicarFiltros()"><option value="">Todas as datas</option></select>
+    <select id="filtroProdutor" onchange="aplicarFiltros()"><option value="">Todos os produtores</option></select>
+    <span style="font-size:12px;color:var(--text-soft);display:flex;align-items:center;gap:6px">
+      Entrada de <input id="filtroEntradaDe" type="date" onchange="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--text);font-size:12px">
+      até <input id="filtroEntradaAte" type="date" onchange="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--text);font-size:12px">
+    </span>
     <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
   </div>
 
@@ -59,6 +64,7 @@ document.getElementById('mainContent').innerHTML = `
     <button class="stbtn active" id="btnAbaGeral" onclick="mostrarAbaRelatorio('geral')">Visão geral</button>
     <button class="stbtn" id="btnAbaPersonalizado" onclick="mostrarAbaRelatorio('personalizado')">Relatório personalizado</button>
     <button class="stbtn" id="btnAbaHistorico" onclick="mostrarAbaRelatorio('historico')">Histórico de pesagens</button>
+    <button class="stbtn" id="btnAbaFornecedor" onclick="mostrarAbaRelatorio('fornecedor')">Desempenho por fornecedor</button>
   </div>
 
   <div id="abaGeral">
@@ -156,6 +162,27 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
+
+  <div id="abaFornecedor" style="display:none">
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+      Escolha um fornecedor (produtor de origem) e um período pra ver como os animais comprados dele se saíram, comparado com a média geral do mesmo período — ajuda a decidir se compensa continuar comprando ali, ou pagar mais caro.
+    </p>
+    <div class="toolbar">
+      <select id="filtroFornecedorDesemp" onchange="renderDesempenhoFornecedor()"><option value="">Selecione um fornecedor...</option></select>
+      <select id="filtroPeriodoFornecedor" onchange="renderDesempenhoFornecedor()">
+        <option value="6">Últimos 6 meses</option>
+        <option value="12" selected>Último 1 ano</option>
+        <option value="24">Últimos 2 anos</option>
+        <option value="0">Todo o período</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="cardh">Desempenho do fornecedor</div>
+      <div class="cardb" id="conteudoDesempenhoFornecedor">
+        <p style="color:var(--text-dim);font-size:13px">Selecione um fornecedor pra ver o desempenho.</p>
+      </div>
+    </div>
+  </div>
 `;
 
 let animaisCache = [];
@@ -171,9 +198,12 @@ function mostrarAbaRelatorio(aba) {
   document.getElementById('abaGeral').style.display = aba === 'geral' ? 'block' : 'none';
   document.getElementById('abaPersonalizado').style.display = aba === 'personalizado' ? 'block' : 'none';
   document.getElementById('abaHistorico').style.display = aba === 'historico' ? 'block' : 'none';
+  document.getElementById('abaFornecedor').style.display = aba === 'fornecedor' ? 'block' : 'none';
   document.getElementById('btnAbaGeral').classList.toggle('active', aba === 'geral');
   document.getElementById('btnAbaPersonalizado').classList.toggle('active', aba === 'personalizado');
   document.getElementById('btnAbaHistorico').classList.toggle('active', aba === 'historico');
+  document.getElementById('btnAbaFornecedor').classList.toggle('active', aba === 'fornecedor');
+  if (aba === 'fornecedor') renderDesempenhoFornecedor();
 }
 
 // ---------- Catálogo de campos do relatório personalizado ----------
@@ -339,6 +369,24 @@ function carregarFiltroMeses() {
   if (valorAtual) sel.value = valorAtual;
 }
 
+function carregarFiltroProdutores() {
+  const produtores = new Set();
+  animaisCache.forEach(a => { if (a.produtor_origem) produtores.add(a.produtor_origem); });
+  const ordenados = [...produtores].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  const sel = document.getElementById('filtroProdutor');
+  const valorAtual = sel.value;
+  sel.innerHTML = `<option value="">Todos os produtores</option>` +
+    ordenados.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (valorAtual) sel.value = valorAtual;
+
+  const selDesemp = document.getElementById('filtroFornecedorDesemp');
+  const valorAtualDesemp = selDesemp.value;
+  selDesemp.innerHTML = `<option value="">Selecione um fornecedor...</option>` +
+    ordenados.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (valorAtualDesemp) selDesemp.value = valorAtualDesemp;
+}
+
 function carregarFiltroDatas(mesSelecionado) {
   const sel = document.getElementById('filtroData');
 
@@ -413,6 +461,7 @@ async function carregarDados() {
 
   carregarFiltroMeses();
   carregarFiltroDatas(document.getElementById('filtroMes').value);
+  carregarFiltroProdutores();
   renderSeletorColunas();
   aplicarFiltros();
 }
@@ -425,6 +474,9 @@ function aplicarFiltros() {
   const status = document.getElementById('filtroStatus').value;
   const mes = document.getElementById('filtroMes').value;
   const dataPesagem = document.getElementById('filtroData').value;
+  const produtor = document.getElementById('filtroProdutor').value;
+  const entradaDe = document.getElementById('filtroEntradaDe').value;
+  const entradaAte = document.getElementById('filtroEntradaAte').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
 
   listaFiltrada = animaisCache.filter(a => {
@@ -435,6 +487,9 @@ function aplicarFiltros() {
     if (status && a.status !== status) return false;
     if (mes && (!a.data_ultimo_peso || a.data_ultimo_peso.slice(0, 7) !== mes)) return false;
     if (dataPesagem && a.data_ultimo_peso !== dataPesagem) return false;
+    if (produtor && a.produtor_origem !== produtor) return false;
+    if (entradaDe && (!a.data_entrada || a.data_entrada < entradaDe)) return false;
+    if (entradaAte && (!a.data_entrada || a.data_entrada > entradaAte)) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
     return true;
   });
@@ -812,6 +867,105 @@ function exportarPdfPersonalizado() {
   doc.save(`relatorio-personalizado-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+// ---------- Desempenho por fornecedor ----------
+function renderDesempenhoFornecedor() {
+  const el = document.getElementById('conteudoDesempenhoFornecedor');
+  const fornecedor = document.getElementById('filtroFornecedorDesemp').value;
+  if (!fornecedor) {
+    el.innerHTML = '<p style="color:var(--text-dim);font-size:13px">Selecione um fornecedor pra ver o desempenho.</p>';
+    return;
+  }
+
+  const periodoMeses = parseInt(document.getElementById('filtroPeriodoFornecedor').value) || 0;
+  let dataCorte = null;
+  if (periodoMeses > 0) {
+    const hoje = new Date();
+    const corte = new Date(hoje.getFullYear(), hoje.getMonth() - periodoMeses, hoje.getDate());
+    dataCorte = corte.toISOString().slice(0, 10);
+  }
+  const noPeriodo = a => !dataCorte || (a.data_entrada && a.data_entrada >= dataCorte);
+
+  const doFornecedor = animaisCache.filter(a => a.produtor_origem === fornecedor && noPeriodo(a));
+  const geral = animaisCache.filter(noPeriodo);
+
+  function metricasDe(lista) {
+    const gmdValidos = lista.filter(a => a.gmd_atual !== null && a.gmd_atual !== undefined).map(a => Number(a.gmd_atual));
+    const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : null;
+
+    const pesoValidos = lista.filter(a => a.peso_entrada !== null && a.peso_entrada !== undefined).map(a => Number(a.peso_entrada));
+    const pesoMedioEntrada = pesoValidos.length ? pesoValidos.reduce((s, v) => s + v, 0) / pesoValidos.length : null;
+
+    const custoValidos = lista.filter(a => a.custo_total && a.peso_entrada).map(a => Number(a.custo_total) / Number(a.peso_entrada));
+    const custoMedioKg = custoValidos.length ? custoValidos.reduce((s, v) => s + v, 0) / custoValidos.length : null;
+
+    const vendidos = lista.filter(a => a.status === 'vendido' && a.lucro !== null && a.lucro !== undefined);
+    const lucroMedio = vendidos.length ? vendidos.reduce((s, a) => s + Number(a.lucro), 0) / vendidos.length : null;
+
+    const mortos = lista.filter(a => a.status === 'morto').length;
+    const taxaPerda = lista.length ? (mortos / lista.length) * 100 : null;
+
+    return { total: lista.length, gmdMedio, pesoMedioEntrada, custoMedioKg, lucroMedio, taxaPerda, vendidosQtd: vendidos.length, mortosQtd: mortos };
+  }
+
+  const mF = metricasDe(doFornecedor);
+  const mG = metricasDe(geral);
+
+  const fmt = (v, casas) => v === null ? '—' : v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+
+  function comparativo(vF, vG, maiorEhMelhor) {
+    if (vF === null || vG === null || vG === 0) return '';
+    const diffPct = ((vF - vG) / Math.abs(vG)) * 100;
+    const bom = maiorEhMelhor ? diffPct >= 0 : diffPct <= 0;
+    const cor = bom ? 'var(--success)' : 'var(--danger)';
+    const seta = diffPct >= 0 ? '▲' : '▼';
+    return `<div style="color:${cor};font-size:11px;margin-top:2px">${seta} ${Math.abs(diffPct).toFixed(0)}% vs média geral</div>`;
+  }
+
+  // Peso de entrada não é "bom" ou "ruim" por si só (fornecedor pode vender animal mais
+  // novo/leve de propósito) — mostra a diferença só como informação, sem cor de julgamento.
+  function comparativoNeutro(vF, vG) {
+    if (vF === null || vG === null || vG === 0) return '';
+    const diffPct = ((vF - vG) / Math.abs(vG)) * 100;
+    const seta = diffPct >= 0 ? '▲' : '▼';
+    return `<div style="color:var(--text-dim);font-size:11px;margin-top:2px">${seta} ${Math.abs(diffPct).toFixed(0)}% vs média geral</div>`;
+  }
+
+  if (mF.total === 0) {
+    el.innerHTML = `<p style="color:var(--text-dim);font-size:13px">Nenhum animal de "${fornecedor}" entrou nesse período.</p>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="metrics">
+      <div class="metric">
+        <div class="micon bg-info"><i class="ti ti-tag"></i></div>
+        <div><div class="mlabel">Animais no período</div><div class="mval">${mF.total}</div></div>
+      </div>
+      <div class="metric">
+        <div class="micon bg-warning"><i class="ti ti-chart-line"></i></div>
+        <div><div class="mlabel">GMD médio</div><div class="mval">${fmt(mF.gmdMedio, 2)} kg/d</div>${comparativo(mF.gmdMedio, mG.gmdMedio, true)}</div>
+      </div>
+      <div class="metric">
+        <div class="micon bg-info"><i class="ti ti-scale"></i></div>
+        <div><div class="mlabel">Peso médio de entrada</div><div class="mval">${fmt(mF.pesoMedioEntrada, 0)} kg</div>${comparativoNeutro(mF.pesoMedioEntrada, mG.pesoMedioEntrada)}</div>
+      </div>
+      <div class="metric">
+        <div class="micon bg-info"><i class="ti ti-coin"></i></div>
+        <div><div class="mlabel">Custo médio de entrada / kg</div><div class="mval">R$ ${fmt(mF.custoMedioKg, 2)}</div>${comparativo(mF.custoMedioKg, mG.custoMedioKg, false)}</div>
+      </div>
+      <div class="metric">
+        <div class="micon bg-success"><i class="ti ti-cash"></i></div>
+        <div><div class="mlabel">Lucro médio / animal vendido (${mF.vendidosQtd})</div><div class="mval">R$ ${fmt(mF.lucroMedio, 2)}</div>${comparativo(mF.lucroMedio, mG.lucroMedio, true)}</div>
+      </div>
+      <div class="metric">
+        <div class="micon bg-danger"><i class="ti ti-skull"></i></div>
+        <div><div class="mlabel">Taxa de perda (${mF.mortosQtd} morte${mF.mortosQtd === 1 ? '' : 's'})</div><div class="mval">${fmt(mF.taxaPerda, 1)}%</div>${comparativo(mF.taxaPerda, mG.taxaPerda, false)}</div>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:10px">Comparado com a média geral (todos os fornecedores) no mesmo período. Verde = melhor que a média, vermelho = pior.</p>
+  `;
+}
+
 // ---------- Histórico de pesagens ----------
 function listaParaHistorico() {
   const fazendaId = document.getElementById('filtroFazenda').value;
@@ -819,6 +973,9 @@ function listaParaHistorico() {
   const loteId = document.getElementById('filtroLote').value;
   const categoria = document.getElementById('filtroCategoria').value;
   const status = document.getElementById('filtroStatus').value;
+  const produtor = document.getElementById('filtroProdutor').value;
+  const entradaDe = document.getElementById('filtroEntradaDe').value;
+  const entradaAte = document.getElementById('filtroEntradaAte').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
 
   return animaisCache.filter(a => {
@@ -827,6 +984,9 @@ function listaParaHistorico() {
     if (loteId && a.lote_id !== loteId) return false;
     if (categoria && a.categoria !== categoria) return false;
     if (status && a.status !== status) return false;
+    if (produtor && a.produtor_origem !== produtor) return false;
+    if (entradaDe && (!a.data_entrada || a.data_entrada < entradaDe)) return false;
+    if (entradaAte && (!a.data_entrada || a.data_entrada > entradaAte)) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
     return true;
   });

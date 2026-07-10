@@ -48,7 +48,7 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Data</th><th>Comprador</th><th>NF</th><th>Valor total</th><th>Animais</th><th>Peso total</th><th>Lucro bruto</th><th>Recebimento</th><th>Situação</th><th></th></tr>
+            <tr><th>Data</th><th>Comprador</th><th>Valor total</th><th>Animais</th><th>Peso médio</th><th>Valor por @</th><th>Lucro bruto</th><th>Recebimento</th><th>Situação</th><th></th></tr>
           </thead>
           <tbody id="tabelaVendas">
             <tr class="empty-row"><td colspan="10"><span class="spinner"></span> Carregando...</td></tr>
@@ -67,7 +67,6 @@ document.getElementById('mainContent').innerHTML = `
         <div class="frow cols-3">
           <div class="fgroup"><label>Data da venda *</label><input id="v_data_venda" type="date"></div>
           <div class="fgroup"><label>Comprador</label><input id="v_comprador" placeholder="Nome do comprador"></div>
-          <div class="fgroup"><label>Nota fiscal</label><input id="v_nota_fiscal" placeholder="Número da NF"></div>
         </div>
       </div>
     </div>
@@ -193,6 +192,7 @@ let animaisDisponiveisCache = [];
 let animaisSelecionados = new Map(); // id -> { brinco, pesoSaida, valorVendido, comprador, dataVenda, observacoes }
 let vendasCache = [];
 let logoBase64 = null;
+const ARROBA_KG = 30; // 1 arroba = 30kg (peso vivo)
 
 function carregarLogoBase64() {
   return new Promise((resolve) => {
@@ -236,7 +236,7 @@ function limparFormulario() {
   vendaEditandoId = null;
   parcelasState = [];
   animaisSelecionados = new Map();
-  ['v_comprador','v_nota_fiscal','v_valor_total','v_frete_total','v_observacoes'].forEach(id => {
+  ['v_comprador','v_valor_total','v_frete_total','v_observacoes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('v_forma_recebimento').value = '';
@@ -664,6 +664,8 @@ function renderTabelaVendas(vendas) {
     }
 
     const lucroCor = v.lucro_bruto >= 0 ? 'var(--success)' : 'var(--danger)';
+    const pesoMedio = v.qtd_animais > 0 ? Number(v.peso_total_saida || 0) / v.qtd_animais : 0;
+    const valorPorArroba = v.peso_total_saida > 0 ? Number(v.valor_total || 0) / (Number(v.peso_total_saida) / ARROBA_KG) : null;
 
     const acaoParcelas = v.forma_recebimento === 'Parcelado' ? `
       <button class="btn btn-secondary" style="padding:4px 10px" title="Gerenciar parcelas" onclick="abrirModalParcelas('${v.id}','${(v.comprador || 'venda').replace(/'/g, "\\'")}')"><i class="ti ti-calendar-stats"></i></button>
@@ -673,10 +675,10 @@ function renderTabelaVendas(vendas) {
       <tr>
         <td>${new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
         <td><b style="color:var(--text)">${v.comprador || '—'}</b></td>
-        <td>${v.nota_fiscal || '—'}</td>
         <td>${v.valor_total !== null ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
         <td>${v.qtd_animais || 0}</td>
-        <td>${Number(v.peso_total_saida || 0).toLocaleString('pt-BR')} kg</td>
+        <td>${pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg</td>
+        <td>${valorPorArroba !== null ? 'R$ ' + valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'}</td>
         <td style="color:${lucroCor}">R$ ${Number(v.lucro_bruto || 0).toLocaleString('pt-BR')}</td>
         <td>${v.forma_recebimento || '—'}</td>
         <td>${situacao}</td>
@@ -708,16 +710,16 @@ function exportarVendasExcel() {
   const linhas = lista.map(v => ({
     'Data': new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR'),
     'Comprador': v.comprador || '',
-    'Nota Fiscal': v.nota_fiscal || '',
     'Valor Total': v.valor_total ?? '',
     'Animais': v.qtd_animais || 0,
-    'Peso Total (kg)': v.peso_total_saida ?? 0,
+    'Peso Médio (kg)': v.qtd_animais > 0 ? Number((Number(v.peso_total_saida || 0) / v.qtd_animais).toFixed(1)) : 0,
+    'Valor por @': v.peso_total_saida > 0 ? Number((Number(v.valor_total || 0) / (Number(v.peso_total_saida) / ARROBA_KG)).toFixed(2)) : '',
     'Lucro Bruto': v.lucro_bruto ?? 0,
     'Forma de Recebimento': v.forma_recebimento || '',
   }));
 
   const ws = XLSX.utils.json_to_sheet(linhas);
-  ws['!cols'] = [{wch:12},{wch:20},{wch:12},{wch:13},{wch:9},{wch:14},{wch:13},{wch:16}];
+  ws['!cols'] = [{wch:12},{wch:20},{wch:13},{wch:9},{wch:14},{wch:12},{wch:13},{wch:16}];
   Object.keys(ws).forEach(ref => {
     if (ref[0] === '!') return;
     if (!ws[ref].s) ws[ref].s = {};
@@ -760,25 +762,29 @@ function exportarVendasPdf() {
     doc.text(titulo, 40, 30);
   }
 
-  const linhas = lista.map(v => [
-    new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR'),
-    v.comprador || '—',
-    v.nota_fiscal || '—',
-    v.valor_total !== null ? Number(v.valor_total).toLocaleString('pt-BR') : '—',
-    v.qtd_animais || 0,
-    Number(v.peso_total_saida || 0).toLocaleString('pt-BR'),
-    Number(v.lucro_bruto || 0).toLocaleString('pt-BR'),
-    v.forma_recebimento || '—',
-  ]);
+  const linhas = lista.map(v => {
+    const pesoMedio = v.qtd_animais > 0 ? Number(v.peso_total_saida || 0) / v.qtd_animais : 0;
+    const valorPorArroba = v.peso_total_saida > 0 ? Number(v.valor_total || 0) / (Number(v.peso_total_saida) / ARROBA_KG) : null;
+    return [
+      new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR'),
+      v.comprador || '—',
+      v.valor_total !== null ? Number(v.valor_total).toLocaleString('pt-BR') : '—',
+      v.qtd_animais || 0,
+      pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 }),
+      valorPorArroba !== null ? valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—',
+      Number(v.lucro_bruto || 0).toLocaleString('pt-BR'),
+      v.forma_recebimento || '—',
+    ];
+  });
 
   const valorTotalGeral = lista.reduce((s, v) => s + (Number(v.valor_total) || 0), 0);
   const lucroTotalGeral = lista.reduce((s, v) => s + (Number(v.lucro_bruto) || 0), 0);
 
   doc.autoTable({
     startY: 45,
-    head: [['Data', 'Comprador', 'NF', 'Valor Total', 'Animais', 'Peso Total', 'Lucro Bruto', 'Recebimento']],
+    head: [['Data', 'Comprador', 'Valor Total', 'Animais', 'Peso Médio', 'Valor por @', 'Lucro Bruto', 'Recebimento']],
     body: linhas,
-    foot: [['', '', '', valorTotalGeral.toLocaleString('pt-BR'), '', '', lucroTotalGeral.toLocaleString('pt-BR'), 'TOTAIS']],
+    foot: [['', '', valorTotalGeral.toLocaleString('pt-BR'), '', '', '', lucroTotalGeral.toLocaleString('pt-BR'), 'TOTAIS']],
     theme: 'grid',
     styles: { fontSize: 8, halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
     headStyles: { fillColor: [26, 74, 138], halign: 'center', lineWidth: 0.3, lineColor: [0, 0, 0] },
@@ -798,7 +804,6 @@ async function editarVenda(id) {
 
   document.getElementById('v_data_venda').value = v.data_venda || '';
   document.getElementById('v_comprador').value = v.comprador || '';
-  document.getElementById('v_nota_fiscal').value = v.nota_fiscal || '';
   document.getElementById('v_valor_total').value = v.valor_total || '';
   document.getElementById('v_frete_total').value = v.frete_total || '';
   document.getElementById('v_forma_recebimento').value = v.forma_recebimento || '';
@@ -845,7 +850,6 @@ async function salvarVenda() {
   const payload = {
     data_venda: dataVenda,
     comprador: document.getElementById('v_comprador').value.trim() || null,
-    nota_fiscal: document.getElementById('v_nota_fiscal').value.trim() || null,
     valor_total: Number(valorTotal),
     frete_total: document.getElementById('v_frete_total').value ? Number(document.getElementById('v_frete_total').value) : 0,
     forma_recebimento: formaRecebimento,
