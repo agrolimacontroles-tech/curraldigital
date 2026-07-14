@@ -1,5 +1,5 @@
 // ============================================================
-// CurralDigital — Sidebar / navegação compartilhada
+// TopBoi — Sidebar / navegação compartilhada
 // ============================================================
 
 (function aplicarTemaSalvo() {
@@ -32,7 +32,7 @@ function renderTopbarSidebar(activePage) {
     <div class="topbar">
       <button class="menubtn" onclick="toggleSidebar()" title="Minimizar/expandir menu"><i class="ti ti-menu-2"></i></button>
       <img src="logo-agrolima.png" alt="Agrolima" class="brand-logo">
-      <div class="brand"><img src="boi-icon.png" class="brand-icon" width="22" height="18"> CurralDigital</div>
+      <div class="brand"><img src="boi-icon.png" class="brand-icon" width="22" height="18"> TopBoi</div>
       <div class="spacer"></div>
       <button class="theme-toggle" id="themeToggleBtn" onclick="alternarTema()" title="Alternar tema claro/escuro">
         <i class="ti ${temaAtual === 'light' ? 'ti-moon' : 'ti-sun'}" id="themeToggleIcon"></i>

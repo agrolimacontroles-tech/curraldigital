@@ -1,5 +1,5 @@
 // ============================================================
-// CurralDigital — Configuração do Supabase
+// TopBoi — Configuração do Supabase
 // Inclua este arquivo em todas as páginas, antes dos demais scripts
 // ============================================================
 
