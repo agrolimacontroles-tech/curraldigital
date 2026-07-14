@@ -895,6 +895,22 @@ async function salvarMorte() {
 }
 
 // ---------- Importação de planilhas ----------
+// Roda `worker` sobre `items` com no máximo `limite` chamadas em paralelo,
+// pra não disparar centenas de requisições sequenciais (lento e sem
+// feedback) nem todas de uma vez (risco de sobrecarregar/limitar a API).
+async function executarComConcorrencia(items, limite, worker, aoProgredir) {
+  let indice = 0, concluidos = 0;
+  async function proximo() {
+    while (indice < items.length) {
+      const item = items[indice++];
+      await worker(item);
+      concluidos++;
+      if (aoProgredir) aoProgredir(concluidos, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limite, items.length) }, proximo));
+}
+
 function normalizarTexto(s) {
   return String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -1077,7 +1093,7 @@ async function processarPlanilhaAnimais() {
     validos.push({ linha: linha.__linha, brinco, payload });
   }
 
-  for (const item of validos) {
+  await executarComConcorrencia(validos, 8, async (item) => {
     try {
       const { error } = await supabaseClient.from('animais').insert(item.payload);
       if (error) {
@@ -1089,7 +1105,9 @@ async function processarPlanilhaAnimais() {
     } catch (err) {
       resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo: 'Falha de conexão: ' + (err.message || err) });
     }
-  }
+  }, (feitos, total) => {
+    showMsg('msgImportAnimais', `Importando... ${feitos} de ${total}`, 'success');
+  });
 
   resultados.sort((a, b) => a.linha - b.linha);
   renderResultadoImportacao('tabelaResultadoAnimais', 'cardResultadoAnimais', resultados);
@@ -1148,7 +1166,7 @@ async function processarPlanilhaPesagens() {
     validos.push({ linha: linha.__linha, brinco, payload: { animal_id: animalId, data_pesagem: dataPesagem, peso } });
   }
 
-  for (const item of validos) {
+  await executarComConcorrencia(validos, 8, async (item) => {
     try {
       const { error } = await supabaseClient.from('pesagens').insert(item.payload);
       const motivo = error
@@ -1164,7 +1182,9 @@ async function processarPlanilhaPesagens() {
     } catch (err) {
       resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo: 'Falha de conexão: ' + (err.message || err) });
     }
-  }
+  }, (feitos, total) => {
+    showMsg('msgImportPesagens', `Importando... ${feitos} de ${total}`, 'success');
+  });
 
   resultados.sort((a, b) => a.linha - b.linha);
   renderResultadoImportacao('tabelaResultadoPesagens', 'cardResultadoPesagens', resultados);
