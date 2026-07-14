@@ -71,3 +71,21 @@ async function showUserEmail() {
     document.getElementById('userEmail').textContent = session.user.email;
   }
 }
+
+// ============================================================
+// Busca paginada — o Supabase limita cada consulta a 1000 linhas
+// por padrão. `criarQuery` deve retornar um builder novo (com os
+// filtros/ordenação já aplicados) a cada chamada, sem `.range()`.
+// ============================================================
+async function buscarPaginado(criarQuery) {
+  const LOTE = 1000;
+  let pagina = 0, todos = [];
+  while (true) {
+    const { data, error } = await criarQuery().range(pagina * LOTE, pagina * LOTE + LOTE - 1);
+    if (error) throw error;
+    todos = todos.concat(data || []);
+    if (!data || data.length < LOTE) break;
+    pagina++;
+  }
+  return todos;
+}

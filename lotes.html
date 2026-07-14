@@ -281,11 +281,11 @@ let animaisCacheDash = [];
 let chartComposicaoLoteInstance = null;
 
 async function carregarDashboardLotes() {
-  const [{ data: lotes }, { data: fazendas }, { data: animais }, { data: pesagens }] = await Promise.all([
+  const [{ data: lotes }, { data: fazendas }, animais, pesagens] = await Promise.all([
     supabaseClient.from('lotes').select('id, nome, fazenda_id').order('nome'),
     supabaseClient.from('fazendas').select('id, nome').order('nome'),
-    supabaseClient.from('vw_animais_resumo').select('*'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+    buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
+    buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
   lotesCacheDash = lotes || [];

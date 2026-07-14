@@ -532,12 +532,13 @@ async function carregarFiltroFazendas() {
 async function carregarAnimais() {
   carregarFiltroFazendas();
 
-  const { data: animais, error } = await supabaseClient
-    .from('vw_animais_resumo')
-    .select('*')
-    .order('data_entrada', { ascending: false });
-
-  if (error) {
+  let animais;
+  try {
+    animais = await buscarPaginado(() => supabaseClient
+      .from('vw_animais_resumo')
+      .select('*')
+      .order('data_entrada', { ascending: false }));
+  } catch (error) {
     document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="9">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
@@ -1142,7 +1143,7 @@ async function processarPlanilhaPesagens() {
     return;
   }
 
-  const { data: animais } = await supabaseClient.from('animais').select('id, brinco');
+  const animais = await buscarPaginado(() => supabaseClient.from('animais').select('id, brinco'));
   const mapaBrincos = new Map((animais || []).map(a => [normalizarTexto(a.brinco), a.id]));
 
   const resultados = [];

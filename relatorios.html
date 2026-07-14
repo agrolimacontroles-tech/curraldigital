@@ -404,13 +404,14 @@ function carregarFiltroDatas(mesSelecionado) {
 
 // ---------- Carregamento e enriquecimento com histórico de pesagens ----------
 async function carregarDados() {
-  const [{ data: animais, error }, { data: pesagens }, { data: extras }] = await Promise.all([
-    supabaseClient.from('vw_animais_resumo').select('*'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso, gmd_periodo, gmd_acumulado').order('data_pesagem', { ascending: false }),
-    supabaseClient.from('animais').select('id, pelagem, marca, castrado, data_nascimento, data_desmame, preco_compra_kg, frete_compra, data_venda, peso_saida, preco_venda, comprador, data_morte, causa_morte, observacoes'),
-  ]);
-
-  if (error) {
+  let animais, pesagens, extras;
+  try {
+    [animais, pesagens, extras] = await Promise.all([
+      buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
+      buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso, gmd_periodo, gmd_acumulado').order('data_pesagem', { ascending: false })),
+      buscarPaginado(() => supabaseClient.from('animais').select('id, pelagem, marca, castrado, data_nascimento, data_desmame, preco_compra_kg, frete_compra, data_venda, peso_saida, preco_venda, comprador, data_morte, causa_morte, observacoes')),
+    ]);
+  } catch (error) {
     document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="14">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }

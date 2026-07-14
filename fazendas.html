@@ -165,7 +165,7 @@ async function carregarFazendas() {
   }
 
   // contagem de animais ativos por fazenda
-  const { data: animais } = await supabaseClient.from('animais').select('fazenda_id, status');
+  const animais = await buscarPaginado(() => supabaseClient.from('animais').select('fazenda_id, status'));
   const contagem = {};
   (animais || []).forEach(a => {
     if (a.status === 'ativo') contagem[a.fazenda_id] = (contagem[a.fazenda_id] || 0) + 1;
@@ -275,11 +275,11 @@ let lotesCacheDash = [];
 let chartComposicaoFazendaInstance = null;
 
 async function carregarDashboardFazendas() {
-  const [{ data: fazendas }, { data: animais }, { data: lotes }, { data: pesagens }] = await Promise.all([
+  const [{ data: fazendas }, animais, { data: lotes }, pesagens] = await Promise.all([
     supabaseClient.from('fazendas').select('*').order('nome'),
-    supabaseClient.from('vw_animais_resumo').select('*'),
+    buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
     supabaseClient.from('lotes').select('id, nome, fazenda_id').order('nome'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+    buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
   fazendasCacheDash = fazendas || [];

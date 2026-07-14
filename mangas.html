@@ -163,7 +163,7 @@ async function carregarMangas() {
     return;
   }
 
-  const { data: animais } = await supabaseClient.from('animais').select('manga_id, status');
+  const animais = await buscarPaginado(() => supabaseClient.from('animais').select('manga_id, status'));
   const contagem = {};
   (animais || []).forEach(a => {
     if (a.status === 'ativo' && a.manga_id) contagem[a.manga_id] = (contagem[a.manga_id] || 0) + 1;
@@ -259,11 +259,11 @@ let animaisCacheDash = [];
 let chartComposicaoMangaInstance = null;
 
 async function carregarDashboardMangas() {
-  const [{ data: mangas }, { data: fazendas }, { data: animais }, { data: pesagens }] = await Promise.all([
+  const [{ data: mangas }, { data: fazendas }, animais, pesagens] = await Promise.all([
     supabaseClient.from('mangas').select('id, numero, fazenda_id').order('numero'),
     supabaseClient.from('fazendas').select('id, nome').order('nome'),
-    supabaseClient.from('vw_animais_resumo').select('*'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+    buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
+    buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
   mangasCacheDash = mangas || [];

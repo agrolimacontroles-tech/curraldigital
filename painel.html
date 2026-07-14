@@ -133,10 +133,10 @@ async function carregarPainel() {
   await checkAuth();
   showUserEmail();
 
-  const [{ data: animais }, { data: fazendas }, { data: pesagensTodas }] = await Promise.all([
-    supabaseClient.from('vw_animais_resumo').select('*'),
+  const [animais, { data: fazendas }, pesagensTodas] = await Promise.all([
+    buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
     supabaseClient.from('fazendas').select('id, nome').order('nome'),
-    supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false }),
+    buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
   todosFazendaOptions = fazendas || [];

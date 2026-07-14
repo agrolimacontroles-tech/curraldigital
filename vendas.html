@@ -290,13 +290,17 @@ async function carregarAnimaisDisponiveis() {
   const fazendaId = document.getElementById('v_filtro_fazenda').value;
   const loteId = document.getElementById('v_filtro_lote').value;
 
-  let query = supabaseClient.from('vw_animais_resumo').select('*').eq('status', 'ativo');
-  if (fazendaId) query = query.eq('fazenda_id', fazendaId);
-  if (loteId) query = query.eq('lote_id', loteId);
+  const criarQuery = () => {
+    let query = supabaseClient.from('vw_animais_resumo').select('*').eq('status', 'ativo');
+    if (fazendaId) query = query.eq('fazenda_id', fazendaId);
+    if (loteId) query = query.eq('lote_id', loteId);
+    return query.order('brinco');
+  };
 
-  const { data: animais, error } = await query.order('brinco');
-
-  if (error) {
+  let animais;
+  try {
+    animais = await buscarPaginado(criarQuery);
+  } catch (error) {
     document.getElementById('tabelaAnimaisDisponiveis').innerHTML = `<tr class="empty-row"><td colspan="7">Erro: ${error.message}</td></tr>`;
     return;
   }
