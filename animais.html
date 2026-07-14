@@ -1078,12 +1078,16 @@ async function processarPlanilhaAnimais() {
   }
 
   for (const item of validos) {
-    const { error } = await supabaseClient.from('animais').insert(item.payload);
-    if (error) {
-      const motivo = error.code === '23505' ? 'Já existe um animal com esse brinco.' : error.message;
-      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo });
-    } else {
-      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'ok', motivo: 'Importado com sucesso.' });
+    try {
+      const { error } = await supabaseClient.from('animais').insert(item.payload);
+      if (error) {
+        const motivo = error.code === '23505' ? 'Já existe um animal com esse brinco.' : error.message;
+        resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo });
+      } else {
+        resultados.push({ linha: item.linha, brinco: item.brinco, status: 'ok', motivo: 'Importado com sucesso.' });
+      }
+    } catch (err) {
+      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo: 'Falha de conexão: ' + (err.message || err) });
     }
   }
 
@@ -1145,17 +1149,21 @@ async function processarPlanilhaPesagens() {
   }
 
   for (const item of validos) {
-    const { error } = await supabaseClient.from('pesagens').insert(item.payload);
-    const motivo = error
-      ? (error.code === '23505'
-          ? `Já existe pesagem registrada pra esse animal em ${new Date(item.payload.data_pesagem + 'T00:00:00').toLocaleDateString('pt-BR')}.`
-          : error.message)
-      : 'Importado com sucesso.';
-    resultados.push({
-      linha: item.linha, brinco: item.brinco,
-      status: error ? 'erro' : 'ok',
-      motivo,
-    });
+    try {
+      const { error } = await supabaseClient.from('pesagens').insert(item.payload);
+      const motivo = error
+        ? (error.code === '23505'
+            ? `Já existe pesagem registrada pra esse animal em ${new Date(item.payload.data_pesagem + 'T00:00:00').toLocaleDateString('pt-BR')}.`
+            : error.message)
+        : 'Importado com sucesso.';
+      resultados.push({
+        linha: item.linha, brinco: item.brinco,
+        status: error ? 'erro' : 'ok',
+        motivo,
+      });
+    } catch (err) {
+      resultados.push({ linha: item.linha, brinco: item.brinco, status: 'erro', motivo: 'Falha de conexão: ' + (err.message || err) });
+    }
   }
 
   resultados.sort((a, b) => a.linha - b.linha);
