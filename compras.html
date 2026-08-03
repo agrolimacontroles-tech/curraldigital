@@ -34,10 +34,10 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Data</th><th>Vendedor</th><th>Valor total</th><th>Frete</th><th>Animais</th><th>Peso total</th><th>Comissão</th><th></th></tr>
+            <tr><th>Código</th><th>Data</th><th>Vendedor</th><th>Valor total</th><th>Frete</th><th>Animais</th><th>Peso total</th><th>Comissão</th><th></th></tr>
           </thead>
           <tbody id="tabelaCompras">
-            <tr class="empty-row"><td colspan="8"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -126,12 +126,16 @@ async function carregarCompras() {
   document.getElementById('totalCompras').textContent = `${compras.length} compra${compras.length === 1 ? '' : 's'} registrada${compras.length === 1 ? '' : 's'}`;
 
   if (compras.length === 0) {
-    document.getElementById('tabelaCompras').innerHTML = '<tr class="empty-row"><td colspan="8">Nenhuma compra cadastrada ainda.</td></tr>';
+    document.getElementById('tabelaCompras').innerHTML = '<tr class="empty-row"><td colspan="9">Nenhuma compra cadastrada ainda.</td></tr>';
     return;
   }
 
+  const { data: codigos } = await supabaseClient.from('compras').select('id, codigo');
+  const mapaCodigos = new Map((codigos || []).map(c => [c.id, c.codigo]));
+
   document.getElementById('tabelaCompras').innerHTML = compras.map(c => `
       <tr>
+        <td><b style="color:var(--text)">#${mapaCodigos.get(c.id) ?? '—'}</b></td>
         <td>${new Date(c.data_compra + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
         <td><b style="color:var(--text)">${c.vendedor || '—'}</b></td>
         <td>${c.valor_total !== null ? 'R$ ' + Number(c.valor_total).toLocaleString('pt-BR') : '—'}</td>
@@ -206,13 +210,13 @@ async function salvarCompra() {
     if (error) { showMsg('msgCadastro', 'Erro ao salvar: ' + error.message, 'error'); return; }
     showMsg('msgCadastro', 'Compra atualizada com sucesso!', 'success');
   } else {
-    const { error } = await supabaseClient.from('compras').insert(payload).select('id').single();
+    const { data: nova, error } = await supabaseClient.from('compras').insert(payload).select('id, codigo').single();
     btn.disabled = false;
     if (error) {
       showMsg('msgCadastro', 'Erro ao salvar: ' + error.message, 'error');
       return;
     }
-    showMsg('msgCadastro', 'Compra cadastrada com sucesso!', 'success');
+    showMsg('msgCadastro', `Compra cadastrada com sucesso! Código: #${nova.codigo} — use esse número ao vincular os animais.`, 'success');
   }
 
   limparFormulario();

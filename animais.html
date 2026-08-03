@@ -184,6 +184,7 @@ document.getElementById('mainContent').innerHTML = `
         <div class="cardb">
           <p style="font-size:13px;color:var(--text-table);margin-bottom:10px">
             Use sempre o nome de Fazenda/Lote/Manga exatamente como estão cadastrados no sistema.
+            Pra vincular o lote a uma compra, preencha a coluna "Compra" com o código dela (ex.: 7), veja o código na aba Compras.
             A planilha tem uma aba de instruções detalhadas.
           </p>
           <a class="btn btn-secondary" href="modelo-cadastro-animais.xlsx" download><i class="ti ti-download"></i> Baixar modelo de cadastro</a>
@@ -431,13 +432,13 @@ async function carregarSelectsCadastro() {
   const selCompra = document.getElementById('a_compra_id');
   const { data: compras } = await supabaseClient
     .from('compras')
-    .select('id, data_compra, vendedor, nota_fiscal')
+    .select('id, codigo, data_compra, vendedor, nota_fiscal')
     .order('data_compra', { ascending: false });
 
   selCompra.innerHTML = `<option value="">Sem vínculo / compra individual</option>` +
     (compras || []).map(c => {
       const data = new Date(c.data_compra + 'T00:00:00').toLocaleDateString('pt-BR');
-      const label = [data, c.vendedor, c.nota_fiscal ? 'NF ' + c.nota_fiscal : null].filter(Boolean).join(' — ');
+      const label = [`#${c.codigo}`, data, c.vendedor, c.nota_fiscal ? 'NF ' + c.nota_fiscal : null].filter(Boolean).join(' — ');
       return `<option value="${c.id}">${label}</option>`;
     }).join('');
 }
@@ -1009,15 +1010,17 @@ async function processarPlanilhaAnimais() {
     return;
   }
 
-  const [{ data: fazendas }, { data: lotes }, { data: mangas }] = await Promise.all([
+  const [{ data: fazendas }, { data: lotes }, { data: mangas }, { data: compras }] = await Promise.all([
     supabaseClient.from('fazendas').select('id, nome'),
     supabaseClient.from('lotes').select('id, nome, fazenda_id'),
     supabaseClient.from('mangas').select('id, numero, fazenda_id'),
+    supabaseClient.from('compras').select('id, codigo'),
   ]);
 
   const mapaFazendas = new Map((fazendas || []).map(f => [normalizarTexto(f.nome), f.id]));
   const mapaLotes = new Map((lotes || []).map(l => [`${l.fazenda_id}|${normalizarTexto(l.nome)}`, l.id]));
   const mapaMangas = new Map((mangas || []).map(m => [`${m.fazenda_id}|${normalizarTexto(m.numero)}`, m.id]));
+  const mapaCompras = new Map((compras || []).map(c => [String(c.codigo), c.id]));
 
   const categoriasValidas = ['Bezerro', 'Bezerra', 'Garrote', 'Novilho', 'Novilha', 'Boi', 'Vaca', 'Touro', 'Matrona', 'Vaca seca'];
   const mapaCategorias = new Map(categoriasValidas.map(c => [normalizarTexto(c), c]));
@@ -1062,6 +1065,13 @@ async function processarPlanilhaAnimais() {
       if (!mangaId) { erro(`Manga "${mangaNumero}" não encontrada nessa fazenda.`); continue; }
     }
 
+    let compraId = null;
+    const compraCodigo = String(linha.compra || '').trim();
+    if (compraCodigo) {
+      compraId = mapaCompras.get(compraCodigo.replace(/^#/, ''));
+      if (!compraId) { erro(`Compra #${compraCodigo} não encontrada. Confira o código na aba Compras.`); continue; }
+    }
+
     let categoria = null;
     const categoriaTexto = String(linha.categoria || '').trim();
     if (categoriaTexto) {
@@ -1081,6 +1091,7 @@ async function processarPlanilhaAnimais() {
       fazenda_id: fazendaId,
       lote_id: loteId,
       manga_id: mangaId,
+      compra_id: compraId,
       data_nascimento: excelDateParaISO(linha.datanascimento),
       data_desmame: excelDateParaISO(linha.datadesmame),
       data_entrada: dataEntrada,
