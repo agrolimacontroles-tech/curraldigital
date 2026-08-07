@@ -47,10 +47,10 @@ document.getElementById('mainContent').innerHTML = `
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Brinco</th><th>Fazenda</th><th>Lote / Manga</th><th>Sexo / Categoria</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th><th>Status</th><th></th></tr>
+            <tr><th>Brinco</th><th>Fazenda</th><th>Lote / Manga</th><th>Sexo / Categoria</th><th>Fornecedor</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th><th>Status</th><th></th></tr>
           </thead>
           <tbody id="tabelaAnimais">
-            <tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="10"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -540,7 +540,7 @@ async function carregarAnimais() {
       .select('*')
       .order('data_entrada', { ascending: false }));
   } catch (error) {
-    document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="9">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="10">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
@@ -568,7 +568,7 @@ function aplicarFiltros() {
 
 function renderTabelaAnimais(lista) {
   if (lista.length === 0) {
-    document.getElementById('tabelaAnimais').innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum animal encontrado.</td></tr>';
+    document.getElementById('tabelaAnimais').innerHTML = '<tr class="empty-row"><td colspan="10">Nenhum animal encontrado.</td></tr>';
     return;
   }
 
@@ -591,6 +591,7 @@ function renderTabelaAnimais(lista) {
         <td>${a.fazenda_nome || '—'}</td>
         <td>${localizacao}</td>
         <td>${sexoCategoria}</td>
+        <td>${a.fornecedor || '—'}</td>
         <td>${a.peso_atual !== null ? Number(a.peso_atual).toLocaleString('pt-BR') + ' kg' : '—'}</td>
         <td>${a.gmd_atual !== null ? Number(a.gmd_atual).toFixed(2) + ' kg/d' : '—'}</td>
         <td>${a.dias_no_ciclo !== null ? a.dias_no_ciclo + ' dias' : '—'}</td>
