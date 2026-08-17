@@ -42,15 +42,20 @@ document.getElementById('mainContent').innerHTML = `
       </select>
       <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
     </div>
+    <div class="toolbar" id="barraSelecaoAnimais" style="display:none;background:var(--bg-input);padding:8px 12px;border-radius:8px">
+      <span id="resumoSelecaoAnimais" style="font-size:12px;color:var(--text-soft)">0 selecionados</span>
+      <button class="btn btn-warning" style="padding:5px 12px;font-size:12px" onclick="abrirModalTransferenciaLote()"><i class="ti ti-arrows-exchange"></i> Transferir selecionados</button>
+      <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="limparSelecaoAnimais()">Limpar seleção</button>
+    </div>
     <div id="msgLista" class="msg"></div>
     <div class="card">
       <div class="cardb table-wrap">
         <table>
           <thead>
-            <tr><th>Brinco</th><th>Fazenda</th><th>Lote / Manga</th><th>Sexo / Categoria</th><th>Fornecedor</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th><th>Status</th><th></th></tr>
+            <tr><th style="width:34px"><input type="checkbox" id="chkSelecionarTodosAnimais" onchange="alternarSelecaoTodosAnimais(this.checked)"></th><th>Brinco</th><th>Fazenda</th><th>Lote / Manga</th><th>Sexo / Categoria</th><th>Fornecedor</th><th>Peso atual</th><th>GMD</th><th>Dias no ciclo</th><th>Status</th><th></th></tr>
           </thead>
           <tbody id="tabelaAnimais">
-            <tr class="empty-row"><td colspan="10"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="11"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -364,6 +369,9 @@ let animalEditandoId = null;
 let animaisCache = [];
 let acaoAnimalId = null;
 let acaoAnimalBrinco = null;
+let animaisSelecionados = new Set();
+let ultimaListaFiltrada = [];
+let transferenciaEmLoteIds = null;
 
 // ---------- Navegação entre abas ----------
 function mostrarAba(aba) {
@@ -532,6 +540,7 @@ async function carregarFiltroFazendas() {
 
 async function carregarAnimais() {
   carregarFiltroFazendas();
+  animaisSelecionados.clear();
 
   let animais;
   try {
@@ -540,7 +549,7 @@ async function carregarAnimais() {
       .select('*')
       .order('data_entrada', { ascending: false }));
   } catch (error) {
-    document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="10">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaAnimais').innerHTML = `<tr class="empty-row"><td colspan="11">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
@@ -563,12 +572,43 @@ function aplicarFiltros() {
     return true;
   });
 
+  ultimaListaFiltrada = filtrados;
   renderTabelaAnimais(filtrados);
+}
+
+// ---------- Seleção em lote (transferência) ----------
+function toggleSelecaoAnimalLista(id, marcado) {
+  if (marcado) animaisSelecionados.add(id);
+  else animaisSelecionados.delete(id);
+  atualizarBarraSelecaoAnimais();
+}
+
+function alternarSelecaoTodosAnimais(marcado) {
+  ultimaListaFiltrada.forEach(a => {
+    if (a.status !== 'ativo') return;
+    if (marcado) animaisSelecionados.add(a.id);
+    else animaisSelecionados.delete(a.id);
+  });
+  renderTabelaAnimais(ultimaListaFiltrada);
+}
+
+function limparSelecaoAnimais() {
+  animaisSelecionados.clear();
+  renderTabelaAnimais(ultimaListaFiltrada);
+}
+
+function atualizarBarraSelecaoAnimais() {
+  const n = animaisSelecionados.size;
+  document.getElementById('barraSelecaoAnimais').style.display = n > 0 ? 'flex' : 'none';
+  document.getElementById('resumoSelecaoAnimais').textContent =
+    `${n} animal${n === 1 ? '' : 'is'} selecionado${n === 1 ? '' : 's'}`;
 }
 
 function renderTabelaAnimais(lista) {
   if (lista.length === 0) {
-    document.getElementById('tabelaAnimais').innerHTML = '<tr class="empty-row"><td colspan="10">Nenhum animal encontrado.</td></tr>';
+    document.getElementById('tabelaAnimais').innerHTML = '<tr class="empty-row"><td colspan="11">Nenhum animal encontrado.</td></tr>';
+    document.getElementById('chkSelecionarTodosAnimais').checked = false;
+    atualizarBarraSelecaoAnimais();
     return;
   }
 
@@ -584,9 +624,13 @@ function renderTabelaAnimais(lista) {
         <button class="btn btn-success" style="padding:4px 10px" title="Registrar venda" onclick="abrirModalVenda('${a.id}','${a.brinco}')"><i class="ti ti-cash-banknote"></i></button>
         <button class="btn btn-danger" style="padding:4px 10px" title="Registrar óbito" onclick="abrirModalMorte('${a.id}','${a.brinco}')"><i class="ti ti-skull"></i></button>
       ` : '';
+    const checkboxSelecao = a.status === 'ativo'
+      ? `<input type="checkbox" ${animaisSelecionados.has(a.id) ? 'checked' : ''} onchange="toggleSelecaoAnimalLista('${a.id}', this.checked)">`
+      : '';
 
     return `
       <tr>
+        <td>${checkboxSelecao}</td>
         <td><b style="color:var(--text)">#${a.brinco}</b></td>
         <td>${a.fazenda_nome || '—'}</td>
         <td>${localizacao}</td>
@@ -605,6 +649,11 @@ function renderTabelaAnimais(lista) {
       </tr>
     `;
   }).join('');
+
+  const ativosNaLista = lista.filter(a => a.status === 'ativo');
+  const todosMarcados = ativosNaLista.length > 0 && ativosNaLista.every(a => animaisSelecionados.has(a.id));
+  document.getElementById('chkSelecionarTodosAnimais').checked = todosMarcados;
+  atualizarBarraSelecaoAnimais();
 }
 
 // ---------- CRUD animal ----------
@@ -1223,6 +1272,7 @@ async function processarPlanilhaPesagens() {
 
 // ---------- Modal: transferência ----------
 async function abrirModalTransferencia(animalId, brinco) {
+  transferenciaEmLoteIds = null;
   acaoAnimalId = animalId;
   acaoAnimalBrinco = brinco;
   document.getElementById('modalTransferenciaTitulo').textContent = `Transferir animal — #${brinco}`;
@@ -1242,6 +1292,24 @@ async function abrirModalTransferencia(animalId, brinco) {
   }
 }
 
+async function abrirModalTransferenciaLote() {
+  if (animaisSelecionados.size === 0) return;
+
+  transferenciaEmLoteIds = Array.from(animaisSelecionados);
+  acaoAnimalId = null;
+  document.getElementById('modalTransferenciaTitulo').textContent = `Transferir ${transferenciaEmLoteIds.length} animais selecionados`;
+  document.getElementById('msgTransferencia').className = 'msg';
+  document.getElementById('modalTransferencia').style.display = 'flex';
+
+  const selFazenda = document.getElementById('t_fazenda_id');
+  const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome').order('nome');
+  selFazenda.innerHTML = `<option value="">Selecione...</option>` +
+    (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+
+  document.getElementById('t_lote_id').innerHTML = `<option value="">Selecione a fazenda primeiro</option>`;
+  document.getElementById('t_manga_id').innerHTML = `<option value="">Selecione a fazenda primeiro</option>`;
+}
+
 async function salvarTransferencia() {
   const fazendaId = document.getElementById('t_fazenda_id').value;
   if (!fazendaId) { showMsg('msgTransferencia', 'Selecione a fazenda de destino.', 'error'); return; }
@@ -1249,17 +1317,26 @@ async function salvarTransferencia() {
   const btn = document.getElementById('btnSalvarTransferencia');
   btn.disabled = true;
 
-  const { error } = await supabaseClient.from('animais').update({
+  const payload = {
     fazenda_id: fazendaId,
     lote_id: document.getElementById('t_lote_id').value || null,
     manga_id: document.getElementById('t_manga_id').value || null,
-  }).eq('id', acaoAnimalId);
+  };
+
+  let query = supabaseClient.from('animais').update(payload);
+  query = transferenciaEmLoteIds ? query.in('id', transferenciaEmLoteIds) : query.eq('id', acaoAnimalId);
+  const { error } = await query;
 
   btn.disabled = false;
 
   if (error) {
     showMsg('msgTransferencia', 'Erro ao transferir: ' + error.message, 'error');
     return;
+  }
+
+  if (transferenciaEmLoteIds) {
+    animaisSelecionados.clear();
+    transferenciaEmLoteIds = null;
   }
 
   fecharModal('modalTransferencia');
