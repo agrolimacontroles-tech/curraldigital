@@ -45,7 +45,7 @@ document.getElementById('mainContent').innerHTML = `
       <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
     </div>
     <div class="toolbar">
-      <input id="listaBrincosSelecao" placeholder="Colar lista de brincos (separados por vírgula, espaço ou linha) pra selecionar em massa..." style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:340px;flex:1">
+      <textarea id="listaBrincosSelecao" placeholder="Colar lista de brincos (uma coluna do Excel, ou separados por vírgula/espaço) pra selecionar em massa..." rows="1" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:340px;flex:1;resize:vertical;font-family:inherit"></textarea>
       <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="selecionarPorListaDeBrincos()"><i class="ti ti-list-check"></i> Selecionar brincos</button>
       <span id="resumoSelecaoPorBrinco" style="font-size:12px;color:var(--text-soft)"></span>
     </div>
