@@ -25,6 +25,7 @@ document.getElementById('mainContent').innerHTML = `
       <div class="pagetitle">Relatórios</div>
       <div class="pagesub">Desempenho zootécnico — peso e GMD por fazenda, manga e lote</div>
     </div>
+    <button class="btn btn-primary" id="btnBackupCompleto" onclick="baixarBackupCompleto()" title="Baixa um Excel com todas as tabelas do banco (fazendas, lotes, mangas, animais, pesagens, compras, vendas), uma aba por tabela — guarde em local seguro"><i class="ti ti-download"></i> Backup completo (Excel)</button>
   </div>
 
   <div class="toolbar">
@@ -647,6 +648,57 @@ function renderTabela() {
       <td style="font-weight:600;color:var(--text)">${gmdtMedio.toFixed(2)} kg/d</td>
     </tr>
   `;
+}
+
+// ---------- Backup completo ----------
+// Dump bruto de todas as tabelas do banco, uma aba por tabela, com os IDs originais
+// preservados (pra permitir reconstrução manual em caso de perda de dados no Supabase).
+async function baixarBackupCompleto() {
+  const btn = document.getElementById('btnBackupCompleto');
+  const textoOriginal = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Gerando backup...';
+
+  const tabelas = [
+    { nome: 'fazendas', aba: 'Fazendas' },
+    { nome: 'lotes', aba: 'Lotes' },
+    { nome: 'mangas', aba: 'Mangas' },
+    { nome: 'animais', aba: 'Animais' },
+    { nome: 'pesagens', aba: 'Pesagens' },
+    { nome: 'compras', aba: 'Compras' },
+    { nome: 'vendas', aba: 'Vendas' },
+    { nome: 'vendas_parcelas', aba: 'Vendas_Parcelas' },
+  ];
+
+  try {
+    const wb = XLSX.utils.book_new();
+    const agora = new Date();
+
+    const wsInfo = XLSX.utils.aoa_to_sheet([
+      ['Backup completo — TopBoi (AgroLima)'],
+      ['Gerado em', agora.toLocaleString('pt-BR')],
+      [''],
+      ['Esse arquivo é uma cópia bruta das tabelas do banco, uma aba por tabela,'],
+      ['com os IDs originais preservados. Guarde em local seguro — em caso de'],
+      ['perda de dados no banco, essas abas servem de base pra reconstrução manual.'],
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsInfo, 'Info');
+
+    for (const t of tabelas) {
+      const dados = await buscarPaginado(() => supabaseClient.from(t.nome).select('*'));
+      const ws = (dados && dados.length > 0)
+        ? XLSX.utils.json_to_sheet(dados)
+        : XLSX.utils.aoa_to_sheet([['(sem registros)']]);
+      XLSX.utils.book_append_sheet(wb, ws, t.aba);
+    }
+
+    XLSX.writeFile(wb, `backup-topboi-${agora.toISOString().slice(0, 10)}.xlsx`);
+  } catch (err) {
+    alert('Erro ao gerar o backup: ' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = textoOriginal;
+  }
 }
 
 // ---------- Exportação ----------
