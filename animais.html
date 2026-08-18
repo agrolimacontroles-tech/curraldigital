@@ -33,13 +33,15 @@ document.getElementById('mainContent').innerHTML = `
 
   <div id="abaLista">
     <div class="toolbar">
-      <select id="filtroFazenda" onchange="aplicarFiltros()"><option value="">Todas as fazendas</option></select>
+      <select id="filtroFazenda" onchange="atualizarFiltrosLoteManga(); aplicarFiltros()"><option value="">Todas as fazendas</option></select>
       <select id="filtroStatus" onchange="aplicarFiltros()">
         <option value="">Todos os status</option>
         <option value="ativo">Ativo</option>
         <option value="vendido">Vendido</option>
         <option value="morto">Morto</option>
       </select>
+      <select id="filtroLote" onchange="aplicarFiltros()"><option value="">Todos os lotes</option></select>
+      <select id="filtroManga" onchange="aplicarFiltros()"><option value="">Todas as mangas</option></select>
       <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
     </div>
     <div class="toolbar" id="barraSelecaoAnimais" style="display:none;background:var(--bg-input);padding:8px 12px;border-radius:8px">
@@ -539,7 +541,7 @@ async function carregarFiltroFazendas() {
 }
 
 async function carregarAnimais() {
-  carregarFiltroFazendas();
+  await carregarFiltroFazendas();
   animaisSelecionados.clear();
 
   let animais;
@@ -557,17 +559,77 @@ async function carregarAnimais() {
   document.getElementById('totalAnimais').textContent =
     `${animaisCache.length} animal${animaisCache.length === 1 ? '' : 'is'} cadastrado${animaisCache.length === 1 ? '' : 's'}`;
 
+  atualizarFiltrosLoteManga();
+  aplicarFiltros();
+}
+
+// Repopula os selects de Lote/Manga com base nos animais já carregados
+// (restrito à fazenda escolhida, se houver), sem precisar de outra consulta ao Supabase.
+function atualizarFiltrosLoteManga() {
+  const fazendaId = document.getElementById('filtroFazenda').value;
+  const selLote = document.getElementById('filtroLote');
+  const selManga = document.getElementById('filtroManga');
+  const valorLoteAtual = selLote.value;
+  const valorMangaAtual = selManga.value;
+
+  const relevantes = fazendaId ? animaisCache.filter(a => a.fazenda_id === fazendaId) : animaisCache;
+
+  const lotesUnicos = new Map();
+  relevantes.forEach(a => { if (a.lote_id) lotesUnicos.set(a.lote_id, a.lote_nome); });
+  const mangasUnicas = new Map();
+  relevantes.forEach(a => { if (a.manga_id) mangasUnicas.set(a.manga_id, a.manga_numero); });
+
+  selLote.innerHTML = `<option value="">Todos os lotes</option>` +
+    Array.from(lotesUnicos.entries()).sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, nome]) => `<option value="${id}">${nome}</option>`).join('');
+  selManga.innerHTML = `<option value="">Todas as mangas</option>` +
+    Array.from(mangasUnicas.entries()).sort((a, b) => Number(a[1]) - Number(b[1])).map(([id, numero]) => `<option value="${id}">Manga ${numero}</option>`).join('');
+
+  if (lotesUnicos.has(valorLoteAtual)) selLote.value = valorLoteAtual;
+  if (mangasUnicas.has(valorMangaAtual)) selManga.value = valorMangaAtual;
+}
+
+// Garante que o select tenha a opção (caso o lote/manga não tenha nenhum
+// animal ainda e por isso não apareça derivado do animaisCache) e a seleciona.
+function garantirOpcaoSelect(selectEl, valor, texto) {
+  if (!valor) return;
+  const existe = Array.from(selectEl.options).some(o => o.value === valor);
+  if (!existe) {
+    const opt = document.createElement('option');
+    opt.value = valor;
+    opt.textContent = texto || '—';
+    selectEl.appendChild(opt);
+  }
+  selectEl.value = valor;
+}
+
+// Aplica fazenda/lote/manga vindos da URL (ex: link "ver animais" nas páginas de Lotes/Mangas)
+function aplicarFiltrosDaURL() {
+  const params = new URLSearchParams(location.search);
+  const fazendaId = params.get('fazenda');
+  const loteId = params.get('lote');
+  const mangaId = params.get('manga');
+  if (!fazendaId && !loteId && !mangaId) return;
+
+  if (fazendaId) document.getElementById('filtroFazenda').value = fazendaId;
+  atualizarFiltrosLoteManga();
+  if (loteId) garantirOpcaoSelect(document.getElementById('filtroLote'), loteId, params.get('loteLabel'));
+  if (mangaId) garantirOpcaoSelect(document.getElementById('filtroManga'), mangaId, params.get('mangaLabel'));
+
   aplicarFiltros();
 }
 
 function aplicarFiltros() {
   const fazendaId = document.getElementById('filtroFazenda').value;
   const status = document.getElementById('filtroStatus').value;
+  const loteId = document.getElementById('filtroLote').value;
+  const mangaId = document.getElementById('filtroManga').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
 
   const filtrados = animaisCache.filter(a => {
     if (fazendaId && a.fazenda_id !== fazendaId) return false;
     if (status && a.status !== status) return false;
+    if (loteId && a.lote_id !== loteId) return false;
+    if (mangaId && a.manga_id !== mangaId) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
     return true;
   });
@@ -1352,7 +1414,8 @@ function fecharModal(modalId) {
   await checkAuth();
   showUserEmail();
   document.getElementById('a_data_entrada').value = new Date().toISOString().slice(0, 10);
-  carregarAnimais();
+  await carregarAnimais();
+  aplicarFiltrosDaURL();
 })();
 </script>
 
