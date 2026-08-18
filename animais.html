@@ -664,6 +664,12 @@ function aplicarFiltros() {
     return true;
   });
 
+  filtrados.sort((a, b) => {
+    const na = Number(a.brinco), nb = Number(b.brinco);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return String(a.brinco).localeCompare(String(b.brinco));
+  });
+
   ultimaListaFiltrada = filtrados;
   renderTabelaAnimais(filtrados);
 }
