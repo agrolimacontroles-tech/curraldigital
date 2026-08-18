@@ -810,40 +810,29 @@ async function editarAnimal(id) {
   await carregarInfoComissaoCompra(a.compra_id || '');
 }
 
-// Baixa um Excel com os dados completos (animal + pesagens) antes de excluir de verdade —
-// é o único registro que sobra desses dados depois que a exclusão acontece.
-async function baixarLogExclusao(idsAnimais) {
-  const [{ data: animaisExcluidos }, { data: pesagensExcluidas }] = await Promise.all([
+// Grava no banco (tabela log_exclusoes) os dados completos (animal + pesagens) antes de
+// excluir de verdade — fica guardado no sistema pra exportar quando quiser, em Relatórios.
+async function registrarLogExclusao(idsAnimais) {
+  const [{ data: animaisExcluidos }, { data: pesagensExcluidas }, { data: { session } }] = await Promise.all([
     supabaseClient.from('animais').select('*').in('id', idsAnimais),
     supabaseClient.from('pesagens').select('*').in('animal_id', idsAnimais),
+    supabaseClient.auth.getSession(),
   ]);
 
   if (!animaisExcluidos || animaisExcluidos.length === 0) return;
 
-  const agora = new Date();
-  const wb = XLSX.utils.book_new();
-  const wsInfo = XLSX.utils.aoa_to_sheet([
-    ['Log de exclusão — TopBoi'],
-    ['Excluído em', agora.toLocaleString('pt-BR')],
-    ['Quantidade de animais', animaisExcluidos.length],
-    [''],
-    ['Guarde esse arquivo — é o único registro dos dados originais desses animais depois da exclusão.'],
-  ]);
-  XLSX.utils.book_append_sheet(wb, wsInfo, 'Info');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(animaisExcluidos), 'Animais excluidos');
-  XLSX.utils.book_append_sheet(
-    wb,
-    (pesagensExcluidas && pesagensExcluidas.length > 0) ? XLSX.utils.json_to_sheet(pesagensExcluidas) : XLSX.utils.aoa_to_sheet([['(sem pesagens)']]),
-    'Pesagens excluidas'
-  );
-
-  XLSX.writeFile(wb, `log-exclusao-topboi-${agora.toISOString().slice(0, 10)}-${agora.toTimeString().slice(0, 8).replace(/:/g, '')}.xlsx`);
+  await supabaseClient.from('log_exclusoes').insert({
+    usuario: session?.user?.email || null,
+    quantidade: animaisExcluidos.length,
+    animais: animaisExcluidos,
+    pesagens: pesagensExcluidas || [],
+  });
 }
 
 async function excluirAnimal(id, brinco) {
   if (!confirm(`Excluir o animal #${brinco}? Essa ação não pode ser desfeita (inclui o histórico de pesagens).`)) return;
 
-  await baixarLogExclusao([id]);
+  await registrarLogExclusao([id]);
 
   await supabaseClient.from('pesagens').delete().eq('animal_id', id);
   const { error } = await supabaseClient.from('animais').delete().eq('id', id);
@@ -1522,7 +1511,7 @@ async function confirmarExclusaoLote() {
   const btn = document.getElementById('btnConfirmarExclusaoLote');
   btn.disabled = true;
 
-  await baixarLogExclusao(exclusaoEmLoteIds);
+  await registrarLogExclusao(exclusaoEmLoteIds);
 
   await supabaseClient.from('pesagens').delete().in('animal_id', exclusaoEmLoteIds);
   const { error } = await supabaseClient.from('animais').delete().in('id', exclusaoEmLoteIds);
