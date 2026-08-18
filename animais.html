@@ -47,6 +47,7 @@ document.getElementById('mainContent').innerHTML = `
     <div class="toolbar" id="barraSelecaoAnimais" style="display:none;background:var(--bg-input);padding:8px 12px;border-radius:8px">
       <span id="resumoSelecaoAnimais" style="font-size:12px;color:var(--text-soft)">0 selecionados</span>
       <button class="btn btn-warning" style="padding:5px 12px;font-size:12px" onclick="abrirModalTransferenciaLote()"><i class="ti ti-arrows-exchange"></i> Transferir selecionados</button>
+      <button class="btn btn-danger" style="padding:5px 12px;font-size:12px" onclick="abrirModalExclusaoLote()"><i class="ti ti-trash"></i> Excluir</button>
       <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="limparSelecaoAnimais()">Limpar seleção</button>
     </div>
     <div id="msgLista" class="msg"></div>
@@ -365,6 +366,29 @@ document.getElementById('mainContent').innerHTML = `
       </div>
     </div>
   </div>
+  <!-- Modal: exclusão em massa -->
+  <div class="modal-overlay" id="modalExclusaoLote" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modalExclusaoLoteTitulo">Excluir animais selecionados</span>
+        <button class="modal-close" onclick="fecharModal('modalExclusaoLote')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="msgExclusaoLote" class="msg"></div>
+        <p style="font-size:13px;color:var(--text-table)" id="avisoExclusaoLote"></p>
+        <div class="frow cols-1">
+          <div class="fgroup">
+            <label>Digite <b>excluir</b> pra confirmar</label>
+            <input id="e_confirmacao" placeholder="excluir" oninput="validarConfirmacaoExclusaoLote()" autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" id="btnConfirmarExclusaoLote" onclick="confirmarExclusaoLote()" disabled>Excluir definitivamente</button>
+        <button class="btn btn-secondary" onclick="fecharModal('modalExclusaoLote')">Cancelar</button>
+      </div>
+    </div>
+  </div>
 `;
 
 let animalEditandoId = null;
@@ -374,6 +398,7 @@ let acaoAnimalBrinco = null;
 let animaisSelecionados = new Set();
 let ultimaListaFiltrada = [];
 let transferenciaEmLoteIds = null;
+let exclusaoEmLoteIds = [];
 
 // ---------- Navegação entre abas ----------
 function mostrarAba(aba) {
@@ -1402,6 +1427,47 @@ async function salvarTransferencia() {
   }
 
   fecharModal('modalTransferencia');
+  carregarAnimais();
+}
+
+// ---------- Modal: exclusão em massa ----------
+function abrirModalExclusaoLote() {
+  if (animaisSelecionados.size === 0) return;
+
+  exclusaoEmLoteIds = Array.from(animaisSelecionados);
+  const n = exclusaoEmLoteIds.length;
+  document.getElementById('modalExclusaoLoteTitulo').textContent = `Excluir ${n} animal${n === 1 ? '' : 'is'} selecionado${n === 1 ? '' : 's'}`;
+  document.getElementById('avisoExclusaoLote').textContent =
+    `Você está prestes a excluir ${n} animal${n === 1 ? '' : 'is'} selecionado${n === 1 ? '' : 's'}. Essa ação não pode ser desfeita (inclui o histórico de pesagens de cada um).`;
+  document.getElementById('e_confirmacao').value = '';
+  document.getElementById('btnConfirmarExclusaoLote').disabled = true;
+  document.getElementById('msgExclusaoLote').className = 'msg';
+  document.getElementById('modalExclusaoLote').style.display = 'flex';
+}
+
+function validarConfirmacaoExclusaoLote() {
+  const valor = document.getElementById('e_confirmacao').value.trim().toLowerCase();
+  document.getElementById('btnConfirmarExclusaoLote').disabled = valor !== 'excluir';
+}
+
+async function confirmarExclusaoLote() {
+  if (document.getElementById('e_confirmacao').value.trim().toLowerCase() !== 'excluir') return;
+
+  const btn = document.getElementById('btnConfirmarExclusaoLote');
+  btn.disabled = true;
+
+  await supabaseClient.from('pesagens').delete().in('animal_id', exclusaoEmLoteIds);
+  const { error } = await supabaseClient.from('animais').delete().in('id', exclusaoEmLoteIds);
+
+  if (error) {
+    showMsg('msgExclusaoLote', 'Não foi possível excluir: ' + error.message, 'error');
+    btn.disabled = false;
+    return;
+  }
+
+  animaisSelecionados.clear();
+  exclusaoEmLoteIds = [];
+  fecharModal('modalExclusaoLote');
   carregarAnimais();
 }
 
