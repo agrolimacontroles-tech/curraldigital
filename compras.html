@@ -144,6 +144,7 @@ async function carregarCompras() {
         <td>${Number(c.peso_total_entrada || 0).toLocaleString('pt-BR')} kg</td>
         <td>${c.valor_comissao ? 'R$ ' + Number(c.valor_comissao).toLocaleString('pt-BR') : '—'}</td>
         <td style="white-space:nowrap">
+          <button class="btn btn-warning" style="padding:4px 10px" title="Distribuir valor total + frete entre os animais vinculados" onclick="distribuirValorCompra('${c.id}','${(c.vendedor || 'compra').replace(/'/g, "\\'")}')"><i class="ti ti-arrows-split"></i></button>
           <button class="btn btn-secondary" style="padding:4px 10px" title="Editar" onclick="editarCompra('${c.id}')"><i class="ti ti-pencil"></i></button>
           <button class="btn btn-danger" style="padding:4px 10px" title="Excluir" onclick="excluirCompra('${c.id}','${(c.vendedor || 'compra').replace(/'/g, "\\'")}')"><i class="ti ti-trash"></i></button>
         </td>
@@ -183,6 +184,67 @@ async function excluirCompra(id, vendedor) {
     return;
   }
   carregarCompras();
+}
+
+// Distribui o valor total + frete da compra entre os animais vinculados, proporcional
+// ao peso de cada um — só nos que ainda não têm preço de compra próprio informado
+// (pra não sobrescrever um valor que já foi digitado manualmente).
+async function distribuirValorCompra(compraId, vendedor) {
+  const { data: compra, error: erroCompra } = await supabaseClient.from('compras').select('valor_total, frete_total').eq('id', compraId).single();
+  if (erroCompra) { alert('Erro ao carregar a compra: ' + erroCompra.message); return; }
+
+  const { data: animais, error: erroAnimais } = await supabaseClient.from('animais').select('id, peso_entrada, preco_compra_kg').eq('compra_id', compraId);
+  if (erroAnimais) { alert('Erro ao carregar os animais: ' + erroAnimais.message); return; }
+
+  if (!animais || animais.length === 0) {
+    alert('Nenhum animal vinculado a essa compra ainda. Vincule os animais primeiro (aba Cadastrar animal, campo "Compra de origem").');
+    return;
+  }
+
+  const pesoTotal = animais.reduce((s, a) => s + (Number(a.peso_entrada) || 0), 0);
+  if (!pesoTotal) {
+    alert('Os animais vinculados a essa compra não têm peso de entrada registrado — não é possível calcular o rateio.');
+    return;
+  }
+
+  const semPreco = animais.filter(a => !a.preco_compra_kg);
+  const comPreco = animais.length - semPreco.length;
+
+  if (semPreco.length === 0) {
+    alert('Todos os animais vinculados a essa compra já têm preço de compra próprio informado — nada para distribuir.');
+    return;
+  }
+
+  const valorTotal = Number(compra.valor_total) || 0;
+  const freteTotal = Number(compra.frete_total) || 0;
+  const precoPorKg = valorTotal / pesoTotal;
+
+  const aviso = comPreco > 0
+    ? `${semPreco.length} de ${animais.length} animais serão atualizados (os outros ${comPreco} já têm preço próprio e não serão alterados).`
+    : `Os ${semPreco.length} animais vinculados serão atualizados.`;
+
+  const confirmado = confirm(
+    `Distribuir R$ ${valorTotal.toLocaleString('pt-BR')} de valor total + R$ ${freteTotal.toLocaleString('pt-BR')} de frete entre os animais da compra de "${vendedor}", proporcional ao peso (R$ ${precoPorKg.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/kg)?\n\n${aviso}`
+  );
+  if (!confirmado) return;
+
+  const resultados = await Promise.all(semPreco.map(a => {
+    const peso = Number(a.peso_entrada) || 0;
+    const freteAnimal = freteTotal > 0 ? Number((freteTotal * (peso / pesoTotal)).toFixed(2)) : 0;
+    return supabaseClient.from('animais').update({
+      preco_compra_kg: Number(precoPorKg.toFixed(4)),
+      frete_compra: freteAnimal,
+    }).eq('id', a.id);
+  }));
+
+  const erro = resultados.filter(r => r.error).length;
+  const sucesso = resultados.length - erro;
+
+  if (erro > 0) {
+    alert(`Distribuído em ${sucesso} de ${semPreco.length} animais. ${erro} falharam — tente novamente.`);
+  } else {
+    alert(`Valor distribuído com sucesso em ${sucesso} animal${sucesso === 1 ? '' : 'is'}.`);
+  }
 }
 
 async function salvarCompra() {
