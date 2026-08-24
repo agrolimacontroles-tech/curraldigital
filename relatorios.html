@@ -87,6 +87,10 @@ document.getElementById('mainContent').innerHTML = `
         </div>
       </div>
       <div class="cardb table-wrap">
+        <select id="filtroPesagensGeral" onchange="alternarFiltroPesagens(this.value)" style="margin-bottom:10px">
+          <option value="">Todos</option>
+          <option value="mais2">Mais de 2 pesagens</option>
+        </select>
         <table class="table-center">
           <thead>
             <tr>
@@ -136,6 +140,10 @@ document.getElementById('mainContent').innerHTML = `
         </div>
       </div>
       <div class="cardb table-wrap">
+        <select id="filtroPesagensPersonalizado" onchange="alternarFiltroPesagens(this.value)" style="margin-bottom:10px">
+          <option value="">Todos</option>
+          <option value="mais2">Mais de 2 pesagens</option>
+        </select>
         <table class="table-center" id="tabelaPersonalizadaTable">
           <thead><tr id="cabecalhoPersonalizado"></tr></thead>
           <tbody id="tabelaPersonalizada"><tr class="empty-row"><td>Selecione ao menos uma coluna acima.</td></tr></tbody>
@@ -460,7 +468,7 @@ async function carregarDados() {
       ...(extrasPorId.get(a.id) || {}),
       peso_anterior: pesoAnterior, data_peso_anterior: dataPesoAnterior,
       data_ultimo_peso: dataUltimoPeso, dias_entre_pesagens: diasEntre,
-      gmd_atual: gmdPeriodo, gmdt,
+      gmd_atual: gmdPeriodo, gmdt, qtd_pesagens: historico.length,
     };
   });
 
@@ -468,6 +476,14 @@ async function carregarDados() {
   carregarFiltroDatas(document.getElementById('filtroMes').value);
   carregarFiltroProdutores();
   renderSeletorColunas();
+  aplicarFiltros();
+}
+
+// O filtro de "mais de 2 pesagens" aparece tanto na Visão geral quanto no
+// Relatório personalizado — mantém os dois selects sincronizados entre si.
+function alternarFiltroPesagens(valor) {
+  document.getElementById('filtroPesagensGeral').value = valor;
+  document.getElementById('filtroPesagensPersonalizado').value = valor;
   aplicarFiltros();
 }
 
@@ -483,6 +499,7 @@ function aplicarFiltros() {
   const entradaDe = document.getElementById('filtroEntradaDe').value;
   const entradaAte = document.getElementById('filtroEntradaAte').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
+  const minPesagens = document.getElementById('filtroPesagensGeral').value;
 
   listaFiltrada = animaisCache.filter(a => {
     if (fazendaId && a.fazenda_id !== fazendaId) return false;
@@ -496,6 +513,7 @@ function aplicarFiltros() {
     if (entradaDe && (!a.data_entrada || a.data_entrada < entradaDe)) return false;
     if (entradaAte && (!a.data_entrada || a.data_entrada > entradaAte)) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
+    if (minPesagens === 'mais2' && (a.qtd_pesagens || 0) <= 2) return false;
     return true;
   });
 
