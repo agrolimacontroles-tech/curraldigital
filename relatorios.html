@@ -94,6 +94,7 @@ document.getElementById('mainContent').innerHTML = `
         <table class="table-center">
           <thead>
             <tr>
+              <th style="width:34px"><input type="checkbox" id="chkSelecionarTodosRelatorio" checked onchange="alternarSelecaoTodosRelatorio(this.checked)"></th>
               <th>Fazenda</th>
               <th>Manga</th>
               <th style="cursor:pointer" onclick="ordenarPor('brinco')">Brinco</th>
@@ -111,7 +112,7 @@ document.getElementById('mainContent').innerHTML = `
             </tr>
           </thead>
           <tbody id="tabelaRanking">
-            <tr class="empty-row"><td colspan="14"><span class="spinner"></span> Carregando...</td></tr>
+            <tr class="empty-row"><td colspan="15"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
           <tfoot id="rodapeRelatorio"></tfoot>
         </table>
@@ -200,6 +201,7 @@ document.getElementById('mainContent').innerHTML = `
 let animaisCache = [];
 let listaFiltrada = [];
 let listaOrdenada = [];
+let animaisDeselecionados = new Set();
 let pesagensPorAnimalCache = {};
 let sortField = 'gmd_atual';
 let sortDir = 'desc';
@@ -424,7 +426,7 @@ async function carregarDados() {
       buscarPaginado(() => supabaseClient.from('animais').select('id, pelagem, marca, castrado, data_nascimento, data_desmame, preco_compra_kg, frete_compra, data_venda, peso_saida, preco_venda, comprador, data_morte, causa_morte, observacoes')),
     ]);
   } catch (error) {
-    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="14">Erro ao carregar: ${error.message}</td></tr>`;
+    document.getElementById('tabelaRanking').innerHTML = `<tr class="empty-row"><td colspan="15">Erro ao carregar: ${error.message}</td></tr>`;
     return;
   }
 
@@ -487,6 +489,34 @@ function alternarFiltroPesagens(valor) {
   aplicarFiltros();
 }
 
+// ---------- Seleção de animais nos relatórios (checkbox por linha) ----------
+// Animais desmarcados saem das métricas, gráficos e exportações — mas continuam
+// aparecendo na tabela (com o checkbox desmarcado) pra dar pra remarcar depois.
+// Por padrão todos ficam marcados (o Set começa vazio = ninguém desmarcado).
+function listaComSelecao(lista) {
+  return lista.filter(a => !animaisDeselecionados.has(a.id));
+}
+
+function toggleSelecaoAnimalRelatorio(id, marcado) {
+  if (marcado) animaisDeselecionados.delete(id);
+  else animaisDeselecionados.add(id);
+  renderMetricas();
+  renderGraficos();
+  renderTabela();
+  renderPersonalizado();
+}
+
+function alternarSelecaoTodosRelatorio(marcado) {
+  listaFiltrada.forEach(a => {
+    if (marcado) animaisDeselecionados.delete(a.id);
+    else animaisDeselecionados.add(a.id);
+  });
+  renderMetricas();
+  renderGraficos();
+  renderTabela();
+  renderPersonalizado();
+}
+
 function aplicarFiltros() {
   const fazendaId = document.getElementById('filtroFazenda').value;
   const mangaId = document.getElementById('filtroManga').value;
@@ -538,15 +568,16 @@ function renderTitulo() {
 }
 
 function renderMetricas() {
-  const pesoTotal = listaFiltrada.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
-  const gmdValidos = listaFiltrada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const lista = listaComSelecao(listaFiltrada);
+  const pesoTotal = lista.reduce((s, a) => s + (Number(a.peso_atual) || 0), 0);
+  const gmdValidos = lista.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
-  const pesoMedio = listaFiltrada.length ? pesoTotal / listaFiltrada.length : 0;
+  const pesoMedio = lista.length ? pesoTotal / lista.length : 0;
 
   document.getElementById('metricas').innerHTML = `
     <div class="metric">
       <div class="micon bg-info"><i class="ti ti-tag"></i></div>
-      <div><div class="mlabel">Animais no filtro</div><div class="mval">${listaFiltrada.length}</div></div>
+      <div><div class="mlabel">Animais selecionados</div><div class="mval">${lista.length} <span style="font-size:12px;color:var(--text-dim);font-weight:400">/ ${listaFiltrada.length}</span></div></div>
     </div>
     <div class="metric">
       <div class="micon bg-success"><i class="ti ti-weight"></i></div>
@@ -564,8 +595,9 @@ function renderMetricas() {
 }
 
 function renderGraficos() {
-  const porFazenda = agruparGmdPor(listaFiltrada, 'fazenda_nome');
-  const porLote = agruparGmdPor(listaFiltrada, 'lote_nome');
+  const lista = listaComSelecao(listaFiltrada);
+  const porFazenda = agruparGmdPor(lista, 'fazenda_nome');
+  const porLote = agruparGmdPor(lista, 'lote_nome');
 
   document.getElementById('graficos').innerHTML = `
     <div class="card">
@@ -633,13 +665,14 @@ function renderTabela() {
   });
 
   if (listaOrdenada.length === 0) {
-    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="14">Nenhum animal encontrado com esse filtro.</td></tr>';
+    document.getElementById('tabelaRanking').innerHTML = '<tr class="empty-row"><td colspan="15">Nenhum animal encontrado com esse filtro.</td></tr>';
     document.getElementById('rodapeRelatorio').innerHTML = '';
     return;
   }
 
   document.getElementById('tabelaRanking').innerHTML = listaOrdenada.map(a => `
     <tr>
+      <td><input type="checkbox" ${animaisDeselecionados.has(a.id) ? '' : 'checked'} onchange="toggleSelecaoAnimalRelatorio('${a.id}', this.checked)"></td>
       <td>${a.fazenda_nome || '—'}</td>
       <td>${a.manga_numero ? 'Manga ' + a.manga_numero : '—'}</td>
       <td><b style="color:var(--text)">#${a.brinco}</b></td>
@@ -657,18 +690,22 @@ function renderTabela() {
     </tr>
   `).join('');
 
-  const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const ordenadaSelecionada = listaComSelecao(listaOrdenada);
+  const gmdValidos = ordenadaSelecionada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
-  const gmdtValidos = listaOrdenada.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtValidos = ordenadaSelecionada.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
   const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
 
   document.getElementById('rodapeRelatorio').innerHTML = `
     <tr>
-      <td colspan="12" style="text-align:center;font-weight:600;color:var(--text)">GMD MÉDIO / GMDT MÉDIO</td>
+      <td colspan="13" style="text-align:center;font-weight:600;color:var(--text)">GMD MÉDIO / GMDT MÉDIO (marcados)</td>
       <td style="font-weight:600;color:var(--text)">${gmdMedio.toFixed(2)} kg/d</td>
       <td style="font-weight:600;color:var(--text)">${gmdtMedio.toFixed(2)} kg/d</td>
     </tr>
   `;
+
+  const chkGeral = document.getElementById('chkSelecionarTodosRelatorio');
+  if (chkGeral) chkGeral.checked = listaFiltrada.length > 0 && listaFiltrada.every(a => !animaisDeselecionados.has(a.id));
 }
 
 // ---------- Log de exclusões ----------
@@ -776,9 +813,10 @@ async function baixarBackupCompleto() {
 
 // ---------- Exportação ----------
 function exportarExcel() {
-  if (listaOrdenada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+  const selecionados = listaComSelecao(listaOrdenada);
+  if (selecionados.length === 0) { alert('Não há animais marcados para exportar.'); return; }
 
-  const linhas = listaOrdenada.map(a => ({
+  const linhas = selecionados.map(a => ({
     'Fazenda': a.fazenda_nome || '',
     'Manga': a.manga_numero ? `Manga ${a.manga_numero}` : '',
     'Brinco': a.brinco,
@@ -808,7 +846,8 @@ function exportarExcel() {
 }
 
 function exportarPdf() {
-  if (listaOrdenada.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+  const selecionadosPdf = listaComSelecao(listaOrdenada);
+  if (selecionadosPdf.length === 0) { alert('Não há animais marcados para exportar.'); return; }
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
     alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
@@ -832,7 +871,7 @@ function exportarPdf() {
     doc.text(titulo, 40, 30);
   }
 
-  const linhas = listaOrdenada.map(a => [
+  const linhas = selecionadosPdf.map(a => [
     a.fazenda_nome || '—',
     a.manga_numero ? `Manga ${a.manga_numero}` : '—',
     a.brinco,
@@ -849,9 +888,9 @@ function exportarPdf() {
     a.gmdt !== null ? Number(a.gmdt).toFixed(2) : '—',
   ]);
 
-  const gmdValidos = listaOrdenada.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
+  const gmdValidos = selecionadosPdf.filter(a => a.gmd_atual !== null).map(a => Number(a.gmd_atual));
   const gmdMedio = gmdValidos.length ? gmdValidos.reduce((s, v) => s + v, 0) / gmdValidos.length : 0;
-  const gmdtValidos = listaOrdenada.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
+  const gmdtValidos = selecionadosPdf.filter(a => a.gmdt !== null).map(a => Number(a.gmdt));
   const gmdtMedio = gmdtValidos.length ? gmdtValidos.reduce((s, v) => s + v, 0) / gmdtValidos.length : 0;
 
   doc.autoTable({
@@ -870,7 +909,7 @@ function exportarPdf() {
 
 // ---------- Relatório personalizado ----------
 function listaPersonalizadaAtual() {
-  return listaFiltrada;
+  return listaComSelecao(listaFiltrada);
 }
 
 function formatarValorCampo(animal, campo) {
@@ -909,18 +948,26 @@ function renderPersonalizado() {
     return;
   }
 
-  document.getElementById('cabecalhoPersonalizado').innerHTML = campos.map(c => `<th>${c.label}</th>`).join('');
+  document.getElementById('cabecalhoPersonalizado').innerHTML =
+    `<th style="width:34px"><input type="checkbox" id="chkSelecionarTodosPersonalizado" onchange="alternarSelecaoTodosRelatorio(this.checked)"></th>` +
+    campos.map(c => `<th>${c.label}</th>`).join('');
 
-  const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
+  const lista = [...listaFiltrada].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
 
   if (lista.length === 0) {
-    document.getElementById('tabelaPersonalizada').innerHTML = `<tr class="empty-row"><td colspan="${campos.length}">Nenhum animal encontrado com esse filtro.</td></tr>`;
+    document.getElementById('tabelaPersonalizada').innerHTML = `<tr class="empty-row"><td colspan="${campos.length + 1}">Nenhum animal encontrado com esse filtro.</td></tr>`;
     return;
   }
 
   document.getElementById('tabelaPersonalizada').innerHTML = lista.map(a => `
-    <tr>${campos.map(c => `<td>${c.key === 'brinco' ? `<b style="color:var(--text)">#${a.brinco}</b>` : formatarValorCampo(a, c)}</td>`).join('')}</tr>
+    <tr>
+      <td><input type="checkbox" ${animaisDeselecionados.has(a.id) ? '' : 'checked'} onchange="toggleSelecaoAnimalRelatorio('${a.id}', this.checked)"></td>
+      ${campos.map(c => `<td>${c.key === 'brinco' ? `<b style="color:var(--text)">#${a.brinco}</b>` : formatarValorCampo(a, c)}</td>`).join('')}
+    </tr>
   `).join('');
+
+  const chkPersonalizado = document.getElementById('chkSelecionarTodosPersonalizado');
+  if (chkPersonalizado) chkPersonalizado.checked = listaFiltrada.length > 0 && listaFiltrada.every(a => !animaisDeselecionados.has(a.id));
 }
 
 function exportarExcelPersonalizado() {
@@ -929,7 +976,7 @@ function exportarExcelPersonalizado() {
   if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
 
   const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
-  if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+  if (lista.length === 0) { alert('Não há animais marcados para exportar.'); return; }
 
   const linhas = lista.map(a => {
     const linha = {};
@@ -955,7 +1002,7 @@ function exportarPdfPersonalizado() {
   if (campos.length === 0) { alert('Selecione ao menos uma coluna.'); return; }
 
   const lista = [...listaPersonalizadaAtual()].sort((a, b) => String(a.brinco).localeCompare(String(b.brinco), 'pt-BR', { numeric: true }));
-  if (lista.length === 0) { alert('Não há dados para exportar com esse filtro.'); return; }
+  if (lista.length === 0) { alert('Não há animais marcados para exportar.'); return; }
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
     alert('Não foi possível carregar a biblioteca de PDF (verifique sua conexão com a internet) e tente novamente.');
