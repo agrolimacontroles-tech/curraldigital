@@ -1,0 +1,24 @@
+name: keepalive-supabase
+
+# Mantém o projeto Supabase ativo — o plano free pausa após ~7 dias sem requisições.
+# Roda a cada 3 dias e também pode ser disparado manualmente na aba Actions.
+
+on:
+  schedule:
+    - cron: '31 9 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        run: |
+          URL="https://vwyexfephvlwobxscsbu.supabase.co/rest/v1/compras?select=id&limit=1"
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eWV4ZmVwaHZsd29ieHNjc2J1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NTUxODUsImV4cCI6MjA5ODEzMTE4NX0.StbFD-g6n_g2utNavcOWiiZDZjQXkGowJOtZftEjE4Y"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "$URL" -H "apikey: $KEY")
+          echo "HTTP $CODE"
+          case "$CODE" in
+            2*) echo "Projeto ativo." ;;
+            *) echo "Resposta inesperada ($CODE) — verifique o projeto no dashboard do Supabase."; exit 1 ;;
+          esac
