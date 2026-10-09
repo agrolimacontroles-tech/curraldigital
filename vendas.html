@@ -73,9 +73,9 @@ document.getElementById('mainContent').innerHTML = `
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th><input type="checkbox" id="rv_chkTodos" onchange="alternarSelecaoTodosReverter(this.checked)"></th><th>Brinco</th><th>Data da venda</th><th>Comprador</th><th>Peso de saída</th><th>Valor vendido</th></tr>
+              <tr><th><input type="checkbox" id="rv_chkTodos" onchange="alternarSelecaoTodosReverter(this.checked)"></th><th>Brinco</th><th>Data da venda</th><th>Comprador</th><th>Peso de saída</th><th>Valor vendido</th><th>Origem</th></tr>
             </thead>
-            <tbody id="tabelaReverter"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+            <tbody id="tabelaReverter"><tr class="empty-row"><td colspan="7">Carregando...</td></tr></tbody>
           </table>
         </div>
         <div style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -834,7 +834,7 @@ let vendidosCache = [];
 let vendidosSelecionados = new Set();
 
 async function carregarVendidosReverter() {
-  document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="6"><span class="spinner"></span> Carregando...</td></tr>';
+  document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="7"><span class="spinner"></span> Carregando...</td></tr>';
   try {
     vendidosCache = await buscarPaginado(() => supabaseClient
       .from('animais')
@@ -843,7 +843,7 @@ async function carregarVendidosReverter() {
       .order('data_venda', { ascending: false })
       .order('brinco'));
   } catch (error) {
-    document.getElementById('tabelaReverter').innerHTML = `<tr class="empty-row"><td colspan="6">Erro: ${error.message}</td></tr>`;
+    document.getElementById('tabelaReverter').innerHTML = `<tr class="empty-row"><td colspan="7">Erro: ${error.message}</td></tr>`;
     return;
   }
   vendidosSelecionados = new Set([...vendidosSelecionados].filter(id => vendidosCache.some(a => a.id === id)));
@@ -880,7 +880,7 @@ function listaReverterFiltrada() {
 function renderTabelaReverter() {
   const lista = listaReverterFiltrada();
   if (lista.length === 0) {
-    document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum animal vendido encontrado com esse filtro.</td></tr>';
+    document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="7">Nenhum animal vendido encontrado com esse filtro.</td></tr>';
     document.getElementById('rv_chkTodos').checked = false;
     atualizarResumoReverter();
     return;
@@ -893,6 +893,7 @@ function renderTabelaReverter() {
       <td>${a.comprador || '—'}</td>
       <td>${a.peso_saida !== null ? Number(a.peso_saida).toLocaleString('pt-BR') + ' kg' : '—'}</td>
       <td>${a.preco_venda !== null ? 'R$ ' + Number(a.preco_venda).toLocaleString('pt-BR') : '—'}</td>
+      <td>${a.venda_id ? '<span class="badge bg-success">Venda cadastrada</span>' : '<span class="badge bg-warning">Venda individual</span>'}</td>
     </tr>`).join('');
   document.getElementById('rv_chkTodos').checked = lista.every(a => vendidosSelecionados.has(a.id));
   atualizarResumoReverter();
