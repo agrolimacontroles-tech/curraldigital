@@ -37,6 +37,11 @@ document.getElementById('mainContent').innerHTML = `
     <div class="toolbar">
       <select id="filtroMesVenda" onchange="carregarFiltroDatasVenda(this.value); aplicarFiltrosVendas()"><option value="">Todos os meses</option></select>
       <select id="filtroDataVenda" onchange="aplicarFiltrosVendas()"><option value="">Todas as datas</option></select>
+      <select id="filtroTipoVenda" onchange="aplicarFiltrosVendas()">
+        <option value="">Todas (cadastradas + individuais)</option>
+        <option value="cadastrada">Só vendas cadastradas</option>
+        <option value="individual">Só vendas individuais</option>
+      </select>
     </div>
     <div class="card">
       <div class="cardh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -256,7 +261,7 @@ function mostrarAba(aba) {
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
   document.getElementById('btnTabReverter').classList.toggle('active', aba === 'reverter');
   if (aba === 'lista') carregarVendas();
-  if (aba === 'reverter') carregarVendidosReverter();
+  if (aba === 'reverter') return carregarVendidosReverter();
   if (aba === 'cadastro' && !vendaEditandoId) {
     carregarFiltrosFazendasVenda();
     carregarAnimaisDisponiveis();
@@ -633,10 +638,55 @@ async function carregarVendas() {
     return;
   }
 
-  vendasCache = vendas || [];
+  let individuais = [];
+  try {
+    individuais = await carregarVendasIndividuais();
+  } catch (e) {
+    console.error('Erro ao carregar vendas individuais:', e);
+  }
+
+  vendasCache = [...(vendas || []), ...individuais]
+    .sort((a, b) => String(b.data_venda || '').localeCompare(String(a.data_venda || '')));
   carregarFiltroMesesVenda();
   carregarFiltroDatasVenda(document.getElementById('filtroMesVenda').value);
   aplicarFiltrosVendas();
+}
+
+// Animais marcados como vendidos direto na tela Animais (sem venda cadastrada):
+// agrupa por data + comprador pra aparecer na lista como uma linha só.
+async function carregarVendasIndividuais() {
+  const animais = await buscarPaginado(() => supabaseClient
+    .from('animais')
+    .select('id, brinco, data_venda, comprador, peso_saida, preco_venda')
+    .eq('status', 'vendido')
+    .is('venda_id', null)
+    .order('brinco'));
+  if (animais.length === 0) return [];
+
+  const lucros = await buscarPaginado(() => supabaseClient
+    .from('vw_animais_resumo')
+    .select('id, lucro')
+    .eq('status', 'vendido'));
+  const mapaLucro = new Map(lucros.map(l => [l.id, l.lucro]));
+
+  const grupos = new Map();
+  animais.forEach(a => {
+    const chave = `${a.data_venda || ''}|${a.comprador || ''}`;
+    if (!grupos.has(chave)) {
+      grupos.set(chave, {
+        id: null, individual: true, data_venda: a.data_venda, comprador: a.comprador,
+        valor_total: 0, qtd_animais: 0, peso_total_saida: 0, lucro_bruto: 0,
+        forma_recebimento: null, brincos: [],
+      });
+    }
+    const g = grupos.get(chave);
+    g.valor_total += Number(a.preco_venda) || 0;
+    g.qtd_animais += 1;
+    g.peso_total_saida += Number(a.peso_saida) || 0;
+    g.lucro_bruto += Number(mapaLucro.get(a.id)) || 0;
+    g.brincos.push(a.brinco);
+  });
+  return [...grupos.values()];
 }
 
 function carregarFiltroMesesVenda() {
@@ -669,16 +719,7 @@ function carregarFiltroDatasVenda(mesSelecionado) {
 }
 
 function aplicarFiltrosVendas() {
-  const mes = document.getElementById('filtroMesVenda').value;
-  const data = document.getElementById('filtroDataVenda').value;
-
-  const lista = vendasCache.filter(v => {
-    if (mes && (!v.data_venda || v.data_venda.slice(0, 7) !== mes)) return false;
-    if (data && v.data_venda !== data) return false;
-    return true;
-  });
-
-  renderTabelaVendas(lista);
+  renderTabelaVendas(listaVendasFiltradaAtual());
 }
 
 function renderTabelaVendas(vendas) {
@@ -691,7 +732,9 @@ function renderTabelaVendas(vendas) {
 
   document.getElementById('tabelaVendas').innerHTML = vendas.map(v => {
     let situacao = '<span class="badge bg-info">À vista</span>';
-    if (v.forma_recebimento === 'Parcelado') {
+    if (v.individual) {
+      situacao = '<span class="badge bg-warning">Venda individual</span>';
+    } else if (v.forma_recebimento === 'Parcelado') {
       if (v.parcelas_total === 0) situacao = '<span class="badge bg-warning">Sem parcelas geradas</span>';
       else if (v.parcelas_recebidas >= v.parcelas_total) situacao = '<span class="badge bg-success">Recebido</span>';
       else if (v.parcelas_recebidas > 0) situacao = '<span class="badge bg-warning">Parcial</span>';
@@ -701,6 +744,23 @@ function renderTabelaVendas(vendas) {
     const lucroCor = v.lucro_bruto >= 0 ? 'var(--success)' : 'var(--danger)';
     const pesoMedio = v.qtd_animais > 0 ? Number(v.peso_total_saida || 0) / v.qtd_animais : 0;
     const valorPorArroba = v.peso_total_saida > 0 ? Number(v.valor_total || 0) / (Number(v.peso_total_saida) / ARROBA_KG) : null;
+
+    if (v.individual) {
+      const brincosTxt = v.brincos.map(b => '#' + b).join(', ');
+      return `
+      <tr>
+        <td>${v.data_venda ? new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+        <td><b style="color:var(--text)">${v.comprador || '—'}</b><div style="font-size:11px;color:var(--text-dim);max-width:240px;white-space:normal">${brincosTxt}</div></td>
+        <td>${v.valor_total ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
+        <td>${v.qtd_animais}</td>
+        <td>${pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg</td>
+        <td>${valorPorArroba !== null ? 'R$ ' + valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'}</td>
+        <td style="color:${lucroCor}">R$ ${Number(v.lucro_bruto || 0).toLocaleString('pt-BR')}</td>
+        <td>—</td>
+        <td>${situacao}</td>
+        <td style="white-space:nowrap"><button class="btn btn-secondary" style="padding:4px 10px" title="Reverter esta venda individual" onclick="irParaReverter('${v.data_venda || ''}')"><i class="ti ti-arrow-back-up"></i></button></td>
+      </tr>`;
+    }
 
     const acaoParcelas = v.forma_recebimento === 'Parcelado' ? `
       <button class="btn btn-secondary" style="padding:4px 10px" title="Gerenciar parcelas" onclick="abrirModalParcelas('${v.id}','${(v.comprador || 'venda').replace(/'/g, "\\'")}')"><i class="ti ti-calendar-stats"></i></button>
@@ -731,9 +791,12 @@ function renderTabelaVendas(vendas) {
 function listaVendasFiltradaAtual() {
   const mes = document.getElementById('filtroMesVenda').value;
   const data = document.getElementById('filtroDataVenda').value;
+  const tipo = document.getElementById('filtroTipoVenda').value;
   return vendasCache.filter(v => {
     if (mes && (!v.data_venda || v.data_venda.slice(0, 7) !== mes)) return false;
     if (data && v.data_venda !== data) return false;
+    if (tipo === 'cadastrada' && v.individual) return false;
+    if (tipo === 'individual' && !v.individual) return false;
     return true;
   });
 }
@@ -827,6 +890,18 @@ function exportarVendasPdf() {
   });
 
   doc.save(`vendas-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// Atalho da lista: abre "Reverter venda" já filtrada na data dessa venda individual.
+async function irParaReverter(dataVenda) {
+  document.getElementById('rv_brincos').value = '';
+  await mostrarAba('reverter');
+  if (dataVenda) {
+    document.getElementById('rv_mes').value = dataVenda.slice(0, 7);
+    carregarFiltroDatasReverter(dataVenda.slice(0, 7));
+    document.getElementById('rv_data').value = dataVenda;
+    renderTabelaReverter();
+  }
 }
 
 // ---------- Reverter venda ----------
