@@ -30,6 +30,7 @@ document.getElementById('mainContent').innerHTML = `
   <div class="subtoggle">
     <button class="stbtn active" id="btnTabLista" onclick="mostrarAba('lista')">Lista de vendas</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar venda</button>
+    <button class="stbtn" id="btnTabReverter" onclick="mostrarAba('reverter')">Reverter venda</button>
   </div>
 
   <div id="abaLista">
@@ -54,6 +55,33 @@ document.getElementById('mainContent').innerHTML = `
             <tr class="empty-row"><td colspan="10"><span class="spinner"></span> Carregando...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="abaReverter" style="display:none">
+    <div class="card">
+      <div class="cardh">Reverter venda (voltar animais para "ativo")</div>
+      <div class="cardb">
+        <div style="font-size:12px;color:var(--text-soft);margin-bottom:10px"><i class="ti ti-info-circle"></i> Escolha o mês da venda, marque os animais (ou digite os brincos) e clique em "Reverter selecionados". Os animais voltam a aparecer como ativos e ficam disponíveis para uma nova venda. Data, comprador, peso de saída e valor da venda desses animais são apagados.</div>
+        <div id="msgReverter" class="msg"></div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Mês da venda</label><select id="rv_mes" onchange="carregarFiltroDatasReverter(this.value); renderTabelaReverter()"><option value="">Todos os meses</option></select></div>
+          <div class="fgroup"><label>Data da venda</label><select id="rv_data" onchange="renderTabelaReverter()"><option value="">Todas as datas</option></select></div>
+          <div class="fgroup"><label>Brincos (um ou vários, separados por espaço ou vírgula)</label><input id="rv_brincos" placeholder="Ex.: 2310 2347 1509 2293" oninput="renderTabelaReverter()"></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th><input type="checkbox" id="rv_chkTodos" onchange="alternarSelecaoTodosReverter(this.checked)"></th><th>Brinco</th><th>Data da venda</th><th>Comprador</th><th>Peso de saída</th><th>Valor vendido</th></tr>
+            </thead>
+            <tbody id="tabelaReverter"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <b id="rv_resumo" style="color:var(--text);font-size:13px">0 animais selecionados</b>
+          <button class="btn btn-danger" id="btnReverter" onclick="reverterSelecionados()"><i class="ti ti-arrow-back-up"></i> Reverter selecionados</button>
+        </div>
       </div>
     </div>
   </div>
@@ -223,9 +251,12 @@ function mesLabel(chaveAnoMes) {
 function mostrarAba(aba) {
   document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
+  document.getElementById('abaReverter').style.display = aba === 'reverter' ? 'block' : 'none';
   document.getElementById('btnTabLista').classList.toggle('active', aba === 'lista');
   document.getElementById('btnTabCadastro').classList.toggle('active', aba === 'cadastro');
+  document.getElementById('btnTabReverter').classList.toggle('active', aba === 'reverter');
   if (aba === 'lista') carregarVendas();
+  if (aba === 'reverter') carregarVendidosReverter();
   if (aba === 'cadastro' && !vendaEditandoId) {
     carregarFiltrosFazendasVenda();
     carregarAnimaisDisponiveis();
@@ -796,6 +827,138 @@ function exportarVendasPdf() {
   });
 
   doc.save(`vendas-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ---------- Reverter venda ----------
+let vendidosCache = [];
+let vendidosSelecionados = new Set();
+
+async function carregarVendidosReverter() {
+  document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="6"><span class="spinner"></span> Carregando...</td></tr>';
+  try {
+    vendidosCache = await buscarPaginado(() => supabaseClient
+      .from('animais')
+      .select('id, brinco, data_venda, comprador, peso_saida, preco_venda, venda_id')
+      .eq('status', 'vendido')
+      .order('data_venda', { ascending: false })
+      .order('brinco'));
+  } catch (error) {
+    document.getElementById('tabelaReverter').innerHTML = `<tr class="empty-row"><td colspan="6">Erro: ${error.message}</td></tr>`;
+    return;
+  }
+  vendidosSelecionados = new Set([...vendidosSelecionados].filter(id => vendidosCache.some(a => a.id === id)));
+
+  const selMes = document.getElementById('rv_mes');
+  const mesAtual = selMes.value;
+  const meses = [...new Set(vendidosCache.filter(a => a.data_venda).map(a => a.data_venda.slice(0, 7)))].sort().reverse();
+  selMes.innerHTML = `<option value="">Todos os meses</option>` + meses.map(c => `<option value="${c}">${mesLabel(c)}</option>`).join('');
+  if (mesAtual && meses.includes(mesAtual)) selMes.value = mesAtual;
+  carregarFiltroDatasReverter(selMes.value);
+  renderTabelaReverter();
+}
+
+function carregarFiltroDatasReverter(mes) {
+  const sel = document.getElementById('rv_data');
+  const atual = sel.value;
+  const datas = [...new Set(vendidosCache.filter(a => a.data_venda && (!mes || a.data_venda.slice(0, 7) === mes)).map(a => a.data_venda))].sort().reverse();
+  sel.innerHTML = `<option value="">Todas as datas</option>` + datas.map(d => `<option value="${d}">${new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')}</option>`).join('');
+  if (atual && datas.includes(atual)) sel.value = atual;
+}
+
+function listaReverterFiltrada() {
+  const mes = document.getElementById('rv_mes').value;
+  const data = document.getElementById('rv_data').value;
+  const brincos = document.getElementById('rv_brincos').value.split(/[\s,;]+/).map(b => b.trim().toLowerCase()).filter(Boolean);
+  return vendidosCache.filter(a => {
+    if (mes && (!a.data_venda || a.data_venda.slice(0, 7) !== mes)) return false;
+    if (data && a.data_venda !== data) return false;
+    if (brincos.length && !brincos.includes(String(a.brinco).toLowerCase())) return false;
+    return true;
+  });
+}
+
+function renderTabelaReverter() {
+  const lista = listaReverterFiltrada();
+  if (lista.length === 0) {
+    document.getElementById('tabelaReverter').innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum animal vendido encontrado com esse filtro.</td></tr>';
+    document.getElementById('rv_chkTodos').checked = false;
+    atualizarResumoReverter();
+    return;
+  }
+  document.getElementById('tabelaReverter').innerHTML = lista.map(a => `
+    <tr>
+      <td><input type="checkbox" ${vendidosSelecionados.has(a.id) ? 'checked' : ''} onchange="toggleSelecaoReverter('${a.id}', this.checked)"></td>
+      <td><b style="color:var(--text)">#${a.brinco}</b></td>
+      <td>${a.data_venda ? new Date(a.data_venda + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+      <td>${a.comprador || '—'}</td>
+      <td>${a.peso_saida !== null ? Number(a.peso_saida).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.preco_venda !== null ? 'R$ ' + Number(a.preco_venda).toLocaleString('pt-BR') : '—'}</td>
+    </tr>`).join('');
+  document.getElementById('rv_chkTodos').checked = lista.every(a => vendidosSelecionados.has(a.id));
+  atualizarResumoReverter();
+}
+
+function toggleSelecaoReverter(id, marcado) {
+  if (marcado) vendidosSelecionados.add(id); else vendidosSelecionados.delete(id);
+  document.getElementById('rv_chkTodos').checked = listaReverterFiltrada().every(a => vendidosSelecionados.has(a.id));
+  atualizarResumoReverter();
+}
+
+function alternarSelecaoTodosReverter(marcado) {
+  listaReverterFiltrada().forEach(a => { if (marcado) vendidosSelecionados.add(a.id); else vendidosSelecionados.delete(a.id); });
+  renderTabelaReverter();
+}
+
+function atualizarResumoReverter() {
+  const n = vendidosSelecionados.size;
+  document.getElementById('rv_resumo').textContent = `${n} animal${n === 1 ? '' : 'is'} selecionado${n === 1 ? '' : 's'}`;
+}
+
+async function reverterSelecionados() {
+  const ids = [...vendidosSelecionados];
+  if (ids.length === 0) { showMsg('msgReverter', 'Marque pelo menos um animal.', 'error'); return; }
+
+  const brincos = ids.map(id => '#' + (vendidosCache.find(a => a.id === id) || {}).brinco);
+  const resumo = brincos.length > 12 ? brincos.slice(0, 12).join(', ') + ` e mais ${brincos.length - 12}` : brincos.join(', ');
+  if (!confirm(`Reverter a venda de ${ids.length} animal(is)?\n\n${resumo}\n\nEles voltam para "ativo" e perdem data, comprador, peso de saída e valor da venda. Se uma venda ficar sem nenhum animal, ela (e as parcelas dela) será excluída.`)) return;
+
+  const btn = document.getElementById('btnReverter');
+  btn.disabled = true;
+
+  const vendasAfetadas = [...new Set(ids.map(id => (vendidosCache.find(a => a.id === id) || {}).venda_id).filter(Boolean))];
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const { error } = await supabaseClient.from('animais')
+      .update({ status: 'ativo', data_venda: null, peso_saida: null, preco_venda: null, comprador: null, venda_id: null })
+      .in('id', ids.slice(i, i + 100));
+    if (error) {
+      btn.disabled = false;
+      showMsg('msgReverter', 'Erro ao reverter: ' + error.message, 'error');
+      carregarVendidosReverter();
+      return;
+    }
+  }
+
+  // Venda que ficou sem animais não faz mais sentido: remove junto com as parcelas.
+  let vendasRemovidas = 0, vendasParciais = 0;
+  for (const vendaId of vendasAfetadas) {
+    const { count } = await supabaseClient.from('animais').select('id', { count: 'exact', head: true }).eq('venda_id', vendaId);
+    if (count === 0) {
+      await supabaseClient.from('vendas_parcelas').delete().eq('venda_id', vendaId);
+      const { error } = await supabaseClient.from('vendas').delete().eq('id', vendaId);
+      if (!error) vendasRemovidas++;
+    } else {
+      vendasParciais++;
+    }
+  }
+
+  btn.disabled = false;
+  vendidosSelecionados = new Set();
+  let texto = `${ids.length} animal(is) voltaram para ativo.`;
+  if (vendasRemovidas) texto += ` ${vendasRemovidas} venda(s) vazia(s) excluída(s).`;
+  if (vendasParciais) texto += ` Atenção: ${vendasParciais} venda(s) continuam com outros animais — confira o valor total e as parcelas em "Lista de vendas".`;
+  showMsg('msgReverter', texto, 'success');
+  carregarVendidosReverter();
 }
 
 // ---------- CRUD venda ----------
