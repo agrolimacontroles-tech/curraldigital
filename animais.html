@@ -760,7 +760,7 @@ function renderTabelaAnimais(lista) {
     return `
       <tr>
         <td>${checkboxSelecao}</td>
-        <td><b style="color:var(--text)">#${a.brinco}</b></td>
+        <td><a href="#" title="Ver ficha e histórico de pesos" onclick="abrirFichaAnimal('${a.id}'); return false" style="color:var(--accent-strong);text-decoration:underline dotted;cursor:pointer"><b>#${a.brinco}</b></a></td>
         <td>${a.fazenda_nome || '—'}</td>
         <td>${localizacao}</td>
         <td>${sexoCategoria}</td>

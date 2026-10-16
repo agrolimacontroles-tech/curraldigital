@@ -963,7 +963,7 @@ function renderTabelaReverter() {
   document.getElementById('tabelaReverter').innerHTML = lista.map(a => `
     <tr>
       <td><input type="checkbox" ${vendidosSelecionados.has(a.id) ? 'checked' : ''} onchange="toggleSelecaoReverter('${a.id}', this.checked)"></td>
-      <td><b style="color:var(--text)">#${a.brinco}</b></td>
+      <td><a href="#" title="Ver ficha e histórico de pesos" onclick="abrirFichaAnimal('${a.id}'); return false" style="color:var(--accent-strong);text-decoration:underline dotted;cursor:pointer"><b>#${a.brinco}</b></a></td>
       <td>${a.data_venda ? new Date(a.data_venda + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
       <td>${a.comprador || '—'}</td>
       <td>${a.peso_saida !== null ? Number(a.peso_saida).toLocaleString('pt-BR') + ' kg' : '—'}</td>

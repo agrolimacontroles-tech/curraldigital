@@ -89,3 +89,97 @@ async function buscarPaginado(criarQuery) {
   }
   return todos;
 }
+
+// ============================================================
+// Ficha do animal — clique no brinco: entrada, todas as pesagens
+// (ganho, GMD do período e acumulado) e dados de venda/óbito.
+// Cria o próprio modal, então funciona em qualquer página.
+// ============================================================
+async function abrirFichaAnimal(animalId) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const dataBR = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+  const kg = v => (v === null || v === undefined || v === '') ? '—' : Number(v).toLocaleString('pt-BR') + ' kg';
+  const dec = (v, c) => (v === null || v === undefined || v === '') ? '—' : Number(v).toFixed(c);
+
+  let overlay = document.getElementById('modalFichaAnimal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modalFichaAnimal';
+    overlay.style.display = 'none';
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `<div class="modal-box" style="max-width:640px"><div class="modal-head"><span>Carregando...</span><button class="modal-close" onclick="document.getElementById('modalFichaAnimal').style.display='none'">&times;</button></div><div class="modal-body"><span class="spinner"></span></div></div>`;
+
+  const [{ data: r }, { data: a }, { data: pes }] = await Promise.all([
+    supabaseClient.from('vw_animais_resumo').select('*').eq('id', animalId).maybeSingle(),
+    supabaseClient.from('animais').select('*').eq('id', animalId).maybeSingle(),
+    supabaseClient.from('pesagens').select('data_pesagem, peso, gmd_periodo, gmd_acumulado').eq('animal_id', animalId).order('data_pesagem', { ascending: true }),
+  ]);
+  if (!a) {
+    overlay.querySelector('.modal-body').innerHTML = 'Animal não encontrado.';
+    return;
+  }
+
+  // linha do tempo: entrada + pesagens (se houver pesagem na data da entrada, ela substitui a linha de entrada)
+  const lista = pes || [];
+  const dataEntrada = String(a.data_entrada).slice(0, 10);
+  const pesagemNaEntrada = lista.some(p => String(p.data_pesagem).slice(0, 10) === dataEntrada);
+  const linhas = [];
+  if (!pesagemNaEntrada) linhas.push({ data: dataEntrada, peso: Number(a.peso_entrada), rotulo: 'Entrada' });
+  lista.forEach(p => linhas.push({
+    data: String(p.data_pesagem).slice(0, 10), peso: Number(p.peso),
+    rotulo: String(p.data_pesagem).slice(0, 10) === dataEntrada ? 'Entrada' : 'Pesagem',
+    gmdP: p.gmd_periodo, gmdA: p.gmd_acumulado,
+  }));
+
+  let anterior = null;
+  const corpo = linhas.map(l => {
+    const dias = anterior ? Math.round((new Date(l.data) - new Date(anterior.data)) / 86400000) : null;
+    const ganho = anterior ? l.peso - anterior.peso : null;
+    anterior = l;
+    const corGanho = ganho === null ? '' : (ganho < 0 ? 'color:var(--danger)' : 'color:var(--success)');
+    return `<tr>
+      <td>${dataBR(l.data)}</td><td>${esc(l.rotulo)}</td><td><b style="color:var(--text)">${kg(l.peso)}</b></td>
+      <td style="${corGanho}">${ganho === null ? '—' : (ganho > 0 ? '+' : '') + ganho.toLocaleString('pt-BR') + ' kg'}</td>
+      <td>${dias === null ? '—' : dias + ' d'}</td>
+      <td>${dec(l.gmdP, 2)}</td><td>${dec(l.gmdA, 2)}</td></tr>`;
+  }).join('');
+
+  const primeiro = linhas[0], ultimo = linhas[linhas.length - 1];
+  const totalGanho = ultimo.peso - primeiro.peso;
+  const totalDias = Math.round((new Date(ultimo.data) - new Date(primeiro.data)) / 86400000);
+  const gmdGeral = totalDias > 0 ? (totalGanho / totalDias).toFixed(2) : '—';
+
+  const local = r ? [r.fazenda_nome, r.lote_nome, r.manga_numero ? 'Manga ' + r.manga_numero : null].filter(Boolean).join(' / ') : '';
+  const statusTxt = { ativo: 'Ativo', vendido: 'Vendido', morto: 'Morto' }[a.status] || a.status;
+  const extras = [];
+  if (a.status === 'vendido') extras.push(`Vendido em ${dataBR(a.data_venda)} para ${esc(a.comprador || '—')} — saída ${kg(a.peso_saida)}${a.preco_venda ? ', R$ ' + Number(a.preco_venda).toLocaleString('pt-BR') : ''}`);
+  if (a.status === 'morto') extras.push(`Óbito em ${dataBR(a.data_morte)}${a.causa_morte ? ' — ' + esc(a.causa_morte) : ''}`);
+  if (a.produtor_origem) extras.push('Produtor de origem: ' + esc(a.produtor_origem));
+  if (a.observacoes) extras.push('Obs.: ' + esc(a.observacoes));
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:640px">
+      <div class="modal-head"><span>Animal #${esc(a.brinco)} — ${esc(statusTxt)}</span>
+        <button class="modal-close" onclick="document.getElementById('modalFichaAnimal').style.display='none'">&times;</button></div>
+      <div class="modal-body">
+        <div style="font-size:12px;color:var(--text-soft);line-height:1.6;margin-bottom:10px">
+          ${esc([a.sexo, a.categoria, a.raca].filter(Boolean).join(' · ') || 'Sem sexo/categoria informados')}<br>
+          ${esc(local || 'Sem localização')}<br>
+          ${extras.join('<br>')}
+        </div>
+        <div style="font-size:13px;margin-bottom:8px;color:var(--text)"><b>${linhas.length}</b> registro${linhas.length === 1 ? '' : 's'} de peso —
+          ${totalDias > 0 ? `ganho de <b>${totalGanho.toLocaleString('pt-BR')} kg</b> em <b>${totalDias} dias</b> (GMD geral <b>${gmdGeral} kg/d</b>)` : 'só um registro até agora'}</div>
+        <div class="table-wrap">
+          <table class="mini-table">
+            <thead><tr><th>Data</th><th>Tipo</th><th>Peso</th><th>Ganho</th><th>Dias</th><th>GMD período</th><th>GMD acum.</th></tr></thead>
+            <tbody>${corpo}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-secondary" onclick="document.getElementById('modalFichaAnimal').style.display='none'">Fechar</button></div>
+    </div>`;
+}
