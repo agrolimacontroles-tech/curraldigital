@@ -135,6 +135,12 @@ async function abrirFichaAnimal(animalId) {
     gmdP: p.gmd_periodo, gmdA: p.gmd_acumulado,
   }));
 
+  // ordena por data (a entrada cadastrada pode ter data posterior às pesagens)
+  linhas.sort((x, y) => x.data.localeCompare(y.data));
+  const primeiraPesagem = lista.length ? String(lista[0].data_pesagem).slice(0, 10) : null;
+  const entradaPosterior = !pesagemNaEntrada && primeiraPesagem && dataEntrada > primeiraPesagem;
+  linhas.forEach(l => { if (l.rotulo === 'Entrada' && entradaPosterior) l.rotulo = 'Entrada (cadastrada)'; });
+
   let anterior = null;
   const corpo = linhas.map(l => {
     const dias = anterior ? Math.round((new Date(l.data) - new Date(anterior.data)) / 86400000) : null;
@@ -148,7 +154,8 @@ async function abrirFichaAnimal(animalId) {
       <td>${dec(l.gmdP, 2)}</td><td>${dec(l.gmdA, 2)}</td></tr>`;
   }).join('');
 
-  const primeiro = linhas[0], ultimo = linhas[linhas.length - 1];
+  const baseResumo = entradaPosterior ? linhas.filter(l => l.rotulo !== 'Entrada (cadastrada)') : linhas;
+  const primeiro = baseResumo[0], ultimo = baseResumo[baseResumo.length - 1];
   const totalGanho = ultimo.peso - primeiro.peso;
   const totalDias = Math.round((new Date(ultimo.data) - new Date(primeiro.data)) / 86400000);
   const gmdGeral = totalDias > 0 ? (totalGanho / totalDias).toFixed(2) : '—';
@@ -171,6 +178,7 @@ async function abrirFichaAnimal(animalId) {
           ${esc(local || 'Sem localização')}<br>
           ${extras.join('<br>')}
         </div>
+        ${entradaPosterior ? `<div style="font-size:12px;margin-bottom:8px;color:var(--warning, #e0a030)">&#9888; A data de entrada cadastrada (${dataBR(dataEntrada)}) é posterior à primeira pesagem (${dataBR(primeiraPesagem)}). Confira a data de entrada do animal.</div>` : ''}
         <div style="font-size:13px;margin-bottom:8px;color:var(--text)"><b>${linhas.length}</b> registro${linhas.length === 1 ? '' : 's'} de peso —
           ${totalDias > 0 ? `ganho de <b>${totalGanho.toLocaleString('pt-BR')} kg</b> em <b>${totalDias} dias</b> (GMD geral <b>${gmdGeral} kg/d</b>)` : 'só um registro até agora'}</div>
         <div class="table-wrap">
