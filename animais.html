@@ -40,6 +40,11 @@ document.getElementById('mainContent').innerHTML = `
         <option value="vendido">Vendido</option>
         <option value="morto">Morto</option>
       </select>
+      <select id="filtroSexo" onchange="aplicarFiltros()">
+        <option value="">Todos os sexos</option>
+        <option value="Macho">Macho</option>
+        <option value="Fêmea">Fêmea</option>
+      </select>
       <select id="filtroLote" onchange="aplicarFiltros()"><option value="">Todos os lotes</option></select>
       <select id="filtroManga" onchange="aplicarFiltros()"><option value="">Todas as mangas</option></select>
       <input id="filtroBusca" placeholder="Buscar por brinco..." oninput="aplicarFiltros()" style="background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;min-width:160px">
@@ -653,6 +658,7 @@ function aplicarFiltrosDaURL() {
 function aplicarFiltros() {
   const fazendaId = document.getElementById('filtroFazenda').value;
   const status = document.getElementById('filtroStatus').value;
+  const sexo = document.getElementById('filtroSexo').value;
   const loteId = document.getElementById('filtroLote').value;
   const mangaId = document.getElementById('filtroManga').value;
   const busca = document.getElementById('filtroBusca').value.trim().toLowerCase();
@@ -660,6 +666,7 @@ function aplicarFiltros() {
   const filtrados = animaisCache.filter(a => {
     if (fazendaId && a.fazenda_id !== fazendaId) return false;
     if (status && a.status !== status) return false;
+    if (sexo && a.sexo !== sexo) return false;
     if (loteId && a.lote_id !== loteId) return false;
     if (mangaId && a.manga_id !== mangaId) return false;
     if (busca && !String(a.brinco).toLowerCase().includes(busca)) return false;
