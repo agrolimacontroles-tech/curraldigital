@@ -676,7 +676,7 @@ async function carregarVendasIndividuais() {
       grupos.set(chave, {
         id: null, individual: true, data_venda: a.data_venda, comprador: a.comprador,
         valor_total: 0, qtd_animais: 0, peso_total_saida: 0, lucro_bruto: 0,
-        forma_recebimento: null, brincos: [],
+        forma_recebimento: null, brincos: [], animais: [], chave,
       });
     }
     const g = grupos.get(chave);
@@ -685,6 +685,7 @@ async function carregarVendasIndividuais() {
     g.peso_total_saida += Number(a.peso_saida) || 0;
     g.lucro_bruto += Number(mapaLucro.get(a.id)) || 0;
     g.brincos.push(a.brinco);
+    g.animais.push({ id: a.id, brinco: a.brinco, peso_saida: a.peso_saida, preco_venda: a.preco_venda });
   });
   return [...grupos.values()];
 }
@@ -718,6 +719,62 @@ function carregarFiltroDatasVenda(mesSelecionado) {
     ordenadas.map(d => `<option value="${d}">${new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')}</option>`).join('');
 }
 
+// Modal com os brincos de uma venda (cadastrada: busca no banco; individual: já está carregado)
+async function abrirBrincosVenda(chave) {
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const v = vendasCache.find(x => (x.individual ? x.chave : x.id) === chave);
+  if (!v) return;
+
+  let overlay = document.getElementById('modalBrincosVenda');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modalBrincosVenda';
+    overlay.style.zIndex = '40';
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+  const dataTxt = v.data_venda ? new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+  const cabecalho = (n) => `
+    <div class="modal-head"><span>Animais vendidos — ${esc(v.comprador || '—')} — ${dataTxt} (${n})</span>
+      <button class="modal-close" onclick="document.getElementById('modalBrincosVenda').style.display='none'">&times;</button></div>`;
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `<div class="modal-box" style="max-width:520px">${cabecalho('...')}<div class="modal-body"><span class="spinner"></span></div></div>`;
+
+  let animais = v.individual ? v.animais : null;
+  if (!animais) {
+    try {
+      animais = await buscarPaginado(() => supabaseClient.from('animais').select('id, brinco, peso_saida, preco_venda').eq('venda_id', v.id).order('brinco'));
+    } catch (e) {
+      overlay.querySelector('.modal-body').innerHTML = 'Erro ao carregar: ' + esc(e.message);
+      return;
+    }
+  }
+  animais = [...animais].sort((a, b) => {
+    const na = Number(a.brinco), nb = Number(b.brinco);
+    return (!isNaN(na) && !isNaN(nb)) ? na - nb : String(a.brinco).localeCompare(String(b.brinco));
+  });
+  const linhas = animais.map(a => `
+    <tr>
+      <td><a href="#" title="Ver ficha e histórico de pesos" onclick="abrirFichaAnimal('${a.id}'); return false" style="color:var(--accent-strong);text-decoration:underline dotted;cursor:pointer"><b>#${esc(a.brinco)}</b></a></td>
+      <td>${a.peso_saida !== null && a.peso_saida !== undefined ? Number(a.peso_saida).toLocaleString('pt-BR') + ' kg' : '—'}</td>
+      <td>${a.preco_venda !== null && a.preco_venda !== undefined ? 'R$ ' + Number(a.preco_venda).toLocaleString('pt-BR') : '—'}</td>
+    </tr>`).join('');
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:520px">
+      ${cabecalho(animais.length)}
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="mini-table">
+            <thead><tr><th>Brinco</th><th>Peso de saída</th><th>Valor vendido</th></tr></thead>
+            <tbody>${linhas || '<tr><td colspan="3">Nenhum animal vinculado.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-secondary" onclick="document.getElementById('modalBrincosVenda').style.display='none'">Fechar</button></div>
+    </div>`;
+}
+
 function aplicarFiltrosVendas() {
   renderTabelaVendas(listaVendasFiltradaAtual());
 }
@@ -745,17 +802,20 @@ function renderTabelaVendas(vendas) {
     const pesoMedio = v.qtd_animais > 0 ? Number(v.peso_total_saida || 0) / v.qtd_animais : 0;
     const valorPorArroba = v.peso_total_saida > 0 ? Number(v.valor_total || 0) / (Number(v.peso_total_saida) / ARROBA_KG) : null;
 
+    const chaveVenda = v.individual ? v.chave : v.id;
+    const qtdLink = `<a href="#" title="Ver os brincos vendidos" onclick="abrirBrincosVenda('${String(chaveVenda).replace(/'/g, "\\'")}'); return false" style="color:var(--accent-strong);text-decoration:underline dotted;cursor:pointer">${v.qtd_animais || 0}</a>`;
+
     if (v.individual) {
-      const brincosTxt = v.brincos.map(b => '#' + b).join(', ');
+      const temValor = Number(v.valor_total) > 0;
       return `
       <tr>
         <td>${v.data_venda ? new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-        <td><b style="color:var(--text)">${v.comprador || '—'}</b><div style="font-size:11px;color:var(--text-dim);max-width:240px;white-space:normal">${brincosTxt}</div></td>
-        <td>${v.valor_total ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
-        <td>${v.qtd_animais}</td>
-        <td>${pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg</td>
-        <td>${valorPorArroba !== null ? 'R$ ' + valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'}</td>
-        <td style="color:${lucroCor}">R$ ${Number(v.lucro_bruto || 0).toLocaleString('pt-BR')}</td>
+        <td><b style="color:var(--text)">${v.comprador || '—'}</b></td>
+        <td>${temValor ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
+        <td>${qtdLink}</td>
+        <td>${pesoMedio > 0 ? pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' kg' : '—'}</td>
+        <td>${temValor && valorPorArroba !== null ? 'R$ ' + valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'}</td>
+        <td style="color:${lucroCor}">${temValor ? 'R$ ' + Number(v.lucro_bruto || 0).toLocaleString('pt-BR') : '—'}</td>
         <td>—</td>
         <td>${situacao}</td>
         <td style="white-space:nowrap"><button class="btn btn-secondary" style="padding:4px 10px" title="Reverter esta venda individual" onclick="irParaReverter('${v.data_venda || ''}')"><i class="ti ti-arrow-back-up"></i></button></td>
@@ -771,7 +831,7 @@ function renderTabelaVendas(vendas) {
         <td>${new Date(v.data_venda + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
         <td><b style="color:var(--text)">${v.comprador || '—'}</b></td>
         <td>${v.valor_total !== null ? 'R$ ' + Number(v.valor_total).toLocaleString('pt-BR') : '—'}</td>
-        <td>${v.qtd_animais || 0}</td>
+        <td>${qtdLink}</td>
         <td>${pesoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg</td>
         <td>${valorPorArroba !== null ? 'R$ ' + valorPorArroba.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'}</td>
         <td style="color:${lucroCor}">R$ ${Number(v.lucro_bruto || 0).toLocaleString('pt-BR')}</td>
