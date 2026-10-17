@@ -943,8 +943,7 @@ async function carregarHistoricoPesagens(animalId) {
     .from('pesagens')
     .select('id, data_pesagem, peso, gmd_periodo')
     .eq('animal_id', animalId)
-    .order('data_pesagem', { ascending: false })
-    .limit(5);
+    .order('data_pesagem', { ascending: false });
 
   if (!historico || historico.length === 0) {
     document.getElementById('historicoPesagens').innerHTML = 'Nenhuma pesagem registrada ainda.';
@@ -952,7 +951,8 @@ async function carregarHistoricoPesagens(animalId) {
   }
 
   document.getElementById('historicoPesagens').innerHTML = `
-    <b style="color:var(--text-muted)">Últimas pesagens</b>
+    <b style="color:var(--text-muted)">Todas as pesagens (${historico.length})</b>
+    <div style="max-height:260px;overflow-y:auto">
     <table class="mini-table">
       ${historico.map(h => `
         <tr>
@@ -963,6 +963,7 @@ async function carregarHistoricoPesagens(animalId) {
         </tr>
       `).join('')}
     </table>
+    </div>
   `;
 }
 
