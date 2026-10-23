@@ -191,3 +191,32 @@ async function abrirFichaAnimal(animalId) {
       <div class="modal-foot"><button class="btn btn-secondary" onclick="document.getElementById('modalFichaAnimal').style.display='none'">Fechar</button></div>
     </div>`;
 }
+
+// ============================================================
+// Confinamento: botão "Incluir / Não incluir / Só confinamento"
+// Fazendas marcadas como confinamento (fazendas.confinamento = true)
+// entram ou saem da evolução e dos relatórios conforme a escolha.
+// ============================================================
+const CONFINAMENTO_KEY = 'curraldigital-confinamento';
+let FAZENDAS_CONFINAMENTO = new Set();
+
+function modoConfinamento() {
+  try { return localStorage.getItem(CONFINAMENTO_KEY) || 'incluir'; } catch (e) { return 'incluir'; }
+}
+function salvarModoConfinamento(valor) {
+  try { localStorage.setItem(CONFINAMENTO_KEY, valor); } catch (e) { /* ignora */ }
+}
+function passaFiltroConfinamento(fazendaId, modo) {
+  const ehConf = FAZENDAS_CONFINAMENTO.has(fazendaId);
+  if (modo === 'so') return ehConf;
+  if (modo === 'excluir') return !ehConf;
+  return true;
+}
+function selectConfinamentoHtml(id, onchange) {
+  const m = modoConfinamento();
+  return `<select id="${id}" title="Controla se os animais do confinamento (Buriti Confinamento) entram na evolução e nos números" onchange="salvarModoConfinamento(this.value); ${onchange}">
+    <option value="incluir" ${m === 'incluir' ? 'selected' : ''}>Confinamento: incluir</option>
+    <option value="excluir" ${m === 'excluir' ? 'selected' : ''}>Confinamento: não incluir</option>
+    <option value="so" ${m === 'so' ? 'selected' : ''}>Só confinamento</option>
+  </select>`;
+}

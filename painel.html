@@ -23,7 +23,8 @@ document.getElementById('mainContent').innerHTML = `
       <div class="pagetitle">Painel</div>
       <div class="pagesub" id="dataAtual"></div>
     </div>
-    <div style="position:relative">
+    <div style="position:relative;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+      <span id="boxConfinamentoPainel"></span>
       <button class="btn btn-secondary" id="btnFiltroFazendas" onclick="alternarPainelFiltro()">
         <i class="ti ti-filter"></i> <span id="labelFiltroFazendas">Todas as fazendas</span> <i class="ti ti-chevron-down"></i>
       </button>
@@ -135,11 +136,13 @@ async function carregarPainel() {
 
   const [animais, { data: fazendas }, pesagensTodas] = await Promise.all([
     buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
-    supabaseClient.from('fazendas').select('id, nome').order('nome'),
+    supabaseClient.from('fazendas').select('id, nome, confinamento').order('nome'),
     buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
   todosFazendaOptions = fazendas || [];
+  FAZENDAS_CONFINAMENTO = new Set(todosFazendaOptions.filter(f => f.confinamento).map(f => f.id));
+  document.getElementById('boxConfinamentoPainel').innerHTML = selectConfinamentoHtml('filtroConfinamentoPainel', 'renderPainelCompleto()');
   fazendasSelecionadas = carregarSelecaoFazendasSalva();
   // remove da seleção salva qualquer fazenda que não exista mais
   fazendasSelecionadas = new Set([...fazendasSelecionadas].filter(id => todosFazendaOptions.some(f => f.id === id)));
@@ -167,8 +170,9 @@ async function carregarPainel() {
 }
 
 function listaFiltradaPainel() {
-  if (fazendasSelecionadas.size === 0) return animaisGlobalCache;
-  return animaisGlobalCache.filter(a => fazendasSelecionadas.has(a.fazenda_id));
+  const modo = modoConfinamento();
+  return animaisGlobalCache.filter(a =>
+    (fazendasSelecionadas.size === 0 || fazendasSelecionadas.has(a.fazenda_id)) && passaFiltroConfinamento(a.fazenda_id, modo));
 }
 
 function renderPainelCompleto() {
@@ -433,9 +437,9 @@ function renderSemPesagemEMangas(ativos) {
 async function carregarOcupacaoMangas() {
   const { data: mangas } = await supabaseClient.from('vw_mangas_ocupacao').select('*');
 
-  const mangasFiltradas = fazendasSelecionadas.size === 0
-    ? (mangas || [])
-    : (mangas || []).filter(m => fazendasSelecionadas.has(m.fazenda_id));
+  const modoConf = modoConfinamento();
+  const mangasFiltradas = (mangas || []).filter(m =>
+    (fazendasSelecionadas.size === 0 || fazendasSelecionadas.has(m.fazenda_id)) && passaFiltroConfinamento(m.fazenda_id, modoConf));
 
   document.getElementById('conteudoOcupacaoMangas').innerHTML = mangasFiltradas.length === 0
     ? '<p style="color:var(--text-dim);font-size:13px">Nenhuma manga cadastrada nessa seleção.</p>'
