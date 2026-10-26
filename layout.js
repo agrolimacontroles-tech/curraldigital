@@ -15,6 +15,7 @@ const MENU_ITEMS = [
   { page: 'mangas',     label: 'Mangas',     icon: 'ti-fence' },
   { page: 'compras',    label: 'Compras',    icon: 'ti-shopping-cart' },
   { page: 'vendas',     label: 'Vendas',     icon: 'ti-currency-dollar' },
+  { page: 'indicadores', label: 'Indicadores', icon: 'ti-chart-line' },
   { page: 'relatorios', label: 'Relatórios', icon: 'ti-chart-bar' },
 ];
 

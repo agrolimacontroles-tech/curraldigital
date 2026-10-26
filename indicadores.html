@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TopBoi — Indicadores</title>
+<link rel="icon" href="logo-agrolima.png" type="image/png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('indicadores');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Indicadores</div>
+      <div class="pagesub">GMD, consumo de sal, custo por cabeça e custo por @ — por regime (pasto, TIP e confinamento)</div>
+    </div>
+    <button class="btn btn-secondary" onclick="exportarIndicadores()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+  </div>
+
+  <div class="toolbar">
+    <label style="font-size:12px;color:var(--text-soft)">De</label>
+    <input type="date" id="indDe" onchange="calcularIndicadores()" class="ind-input">
+    <label style="font-size:12px;color:var(--text-soft)">Até</label>
+    <input type="date" id="indAte" onchange="calcularIndicadores()" class="ind-input">
+    <span id="indAviso" style="font-size:12px;color:var(--warning)"></span>
+  </div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-info-circle"></i> Como é calculado</div>
+    <div class="cardb" style="font-size:12px;color:var(--text-soft);line-height:1.6">
+      <b>Regime:</b> <b>Pasto</b> = fazendas que não são confinamento; <b>TIP</b> = lote TIP do Buriti Confinamento; <b>Confinamento</b> = demais lotes do Buriti Confinamento.<br>
+      <b>Ganho e GMD:</b> variação do peso de cada animal dentro do período, entre a primeira e a última pesagem (a entrada conta como pesagem). GMD = ganho total ÷ dias de acompanhamento.
+      <b>Ganho estimado</b> = GMD do regime × cabeças-dia do regime (assim animais sem pesagem no período também entram). <b>@ produzida</b> = ganho estimado ÷ <span id="indArrobaKg">30</span> kg (peso vivo, o mesmo critério da tela de Vendas).<br>
+      <b>Sal e ração:</b> kg fornecido menos o resíduo do cocho, da planilha de consumo, × o preço de <span id="indPrecos"></span>.
+      <b>Custo operacional:</b> despesas do Top Boi lançadas no SISBOI, rateadas pelos dias do período e depois pelas cabeças-dia de cada regime.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-table"></i> Resumo por regime</div>
+    <div class="cardb table-wrap" id="indResumo"><span class="spinner"></span></div>
+  </div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-sun"></i> GMD por regime e estação (histórico completo — águas: outubro a março, seca: abril a setembro)</div>
+    <div class="cardb table-wrap" id="indEstacao"></div>
+  </div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-salt"></i> Consumo de sal e ração por manga no período</div>
+    <div class="cardb table-wrap" id="indSal"></div>
+  </div>
+
+  <div class="card">
+    <div class="cardh"><i class="ti ti-receipt"></i> Custo operacional do período, por conta (desmarque o que não entra no custo)</div>
+    <div class="cardb table-wrap" id="indCustos"></div>
+  </div>
+`;
+
+const style = document.createElement('style');
+style.textContent = `.ind-input{background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:13px}
+.ind-num{text-align:right;white-space:nowrap}`;
+document.head.appendChild(style);
+
+const HOJE = new Date().toISOString().slice(0, 10);
+const REGIMES = ['Pasto', 'TIP', 'Confinamento'];
+const CONTAS_FORA_PADRAO = new Set(['Pró-labore', 'banco', 'impostos']);
+let D = null;                 // dados carregados
+let contasFora = new Set(CONTAS_FORA_PADRAO);
+let ultimoCalculo = null;     // para exportar
+
+const dt = s => new Date(String(s).slice(0, 10) + 'T00:00:00');
+const dias = (a, b) => Math.round((dt(b) - dt(a)) / 86400000);
+const fmt = (v, c = 0) => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const brl = v => (v === null || v === undefined || isNaN(v)) ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dataBR = s => dt(s).toLocaleDateString('pt-BR');
+const maxD = (a, b) => (a > b ? a : b);
+const minD = (a, b) => (a < b ? a : b);
+const somaDias = (s, n) => { const d = dt(s); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+async function carregarDados() {
+  const [animais, pesagens, { data: fazendas }, { data: lotes }, sal, custos, { data: params }] = await Promise.all([
+    buscarPaginado(() => supabaseClient.from('animais').select('id, brinco, fazenda_id, lote_id, status, data_entrada, peso_entrada, data_venda, data_morte, peso_saida')),
+    buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, peso')),
+    supabaseClient.from('fazendas').select('id, nome, confinamento'),
+    supabaseClient.from('lotes').select('id, nome'),
+    buscarPaginado(() => supabaseClient.from('sal_consumo').select('*').order('data')),
+    buscarPaginado(() => supabaseClient.from('custos_operacionais').select('*')),
+    supabaseClient.from('indicador_parametros').select('chave, valor'),
+  ]);
+  const p = {};
+  (params || []).forEach(x => { p[x.chave] = Number(x.valor); });
+  const fazMap = new Map((fazendas || []).map(f => [f.id, f]));
+  const loteMap = new Map((lotes || []).map(l => [l.id, l]));
+  const pesPorAnimal = new Map();
+  pesagens.forEach(x => {
+    if (!pesPorAnimal.has(x.animal_id)) pesPorAnimal.set(x.animal_id, []);
+    pesPorAnimal.get(x.animal_id).push({ d: String(x.data_pesagem).slice(0, 10), w: Number(x.peso) });
+  });
+
+  const lista = animais.map(a => {
+    const faz = fazMap.get(a.fazenda_id);
+    const ehConf = !!(faz && (faz.confinamento || /confinamento/i.test(faz.nome || '')));
+    const loteNome = (loteMap.get(a.lote_id) || {}).nome || '';
+    const regime = ehConf ? (/tip/i.test(loteNome) ? 'TIP' : 'Confinamento') : 'Pasto';
+    const ent = String(a.data_entrada).slice(0, 10);
+    const pts = new Map();
+    pts.set(ent, Number(a.peso_entrada));
+    (pesPorAnimal.get(a.id) || []).forEach(x => pts.set(x.d, x.w));      // pesagem na mesma data substitui a entrada
+    if (a.status === 'vendido' && a.data_venda && a.peso_saida) pts.set(String(a.data_venda).slice(0, 10), Number(a.peso_saida));
+    const pontos = [...pts.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([d, w]) => ({ d, w }));
+    let fim = HOJE;
+    if (a.status === 'vendido' && a.data_venda) fim = String(a.data_venda).slice(0, 10);
+    else if (a.status === 'morto' && a.data_morte) fim = String(a.data_morte).slice(0, 10);
+    return { id: a.id, brinco: a.brinco, status: a.status, regime, inicio: ent, fim, pontos };
+  });
+
+  D = { animais: lista, sal, custos, p: { sal_preco_kg: 3.76, racao_tip_preco_kg: 1.83, arroba_kg: 30, ...p } };
+  document.getElementById('indArrobaKg').textContent = D.p.arroba_kg;
+  document.getElementById('indPrecos').textContent = `R$ ${fmt(D.p.sal_preco_kg, 2)}/kg (sal adensado) e R$ ${fmt(D.p.racao_tip_preco_kg, 2)}/kg (ração da TIP)`;
+
+  // período padrão: 3 meses terminando no último mês com despesas lançadas
+  const meses = custos.map(c => String(c.mes).slice(0, 10)).sort();
+  let ate = HOJE, de;
+  if (meses.length) {
+    const ult = dt(meses[meses.length - 1]);
+    const fimMes = new Date(ult.getFullYear(), ult.getMonth() + 1, 0);
+    ate = fimMes.toISOString().slice(0, 10);
+    de = new Date(ult.getFullYear(), ult.getMonth() - 2, 1).toISOString().slice(0, 10);
+  } else de = somaDias(HOJE, -90);
+  document.getElementById('indDe').value = de;
+  document.getElementById('indAte').value = ate;
+}
+
+function pesoEm(pontos, data) {
+  if (data <= pontos[0].d) return pontos[0].w;
+  const ult = pontos[pontos.length - 1];
+  if (data >= ult.d) return ult.w;
+  for (let i = 1; i < pontos.length; i++) {
+    if (data <= pontos[i].d) {
+      const a = pontos[i - 1], b = pontos[i];
+      const t = dias(a.d, data) / Math.max(dias(a.d, b.d), 1);
+      return a.w + (b.w - a.w) * t;
+    }
+  }
+  return ult.w;
+}
+
+function calcularIndicadores() {
+  if (!D) return;
+  const W0 = document.getElementById('indDe').value, W1 = document.getElementById('indAte').value;
+  if (!W0 || !W1 || W1 < W0) return;
+  const arroba = D.p.arroba_kg;
+
+  const reg = {};
+  REGIMES.forEach(r => reg[r] = { animais: 0, cabDia: 0, ganho: 0, diasGanho: 0, descartados: 0, salKg: 0, racaoKg: 0, custoSal: 0, custoRacao: 0, custoOp: 0 });
+
+  D.animais.forEach(a => {
+    const r = reg[a.regime];
+    const s = maxD(W0, a.inicio), e = minD(W1, a.fim);
+    if (e < s) return;
+    r.cabDia += dias(s, e) + 1;
+    if (a.status === 'ativo') r.animais++;
+    if (!a.pontos.length) return;
+    const primeiro = a.pontos[0].d, ultimo = a.pontos[a.pontos.length - 1].d;
+    const s2 = maxD(s, primeiro), e2 = minD(e, ultimo);
+    if (e2 <= s2) return;
+    const n = dias(s2, e2), g = pesoEm(a.pontos, e2) - pesoEm(a.pontos, s2);
+    if (g / n > 3 || g / n < -2) { r.descartados++; return; }       // erro de digitação provável
+    r.ganho += g; r.diasGanho += n;
+  });
+
+  // GMD por estação (histórico completo)
+  const est = {};
+  REGIMES.forEach(r => est[r] = { aguas: { g: 0, d: 0 }, seca: { g: 0, d: 0 } });
+  D.animais.forEach(a => {
+    for (let i = 1; i < a.pontos.length; i++) {
+      const p0 = a.pontos[i - 1], p1 = a.pontos[i];
+      const n = dias(p0.d, p1.d);
+      if (n < 1) continue;
+      const g = p1.w - p0.w;
+      if (g / n > 3 || g / n < -2) continue;
+      const meio = new Date((dt(p0.d).getTime() + dt(p1.d).getTime()) / 2);
+      const m = meio.getMonth() + 1;
+      const k = (m >= 10 || m <= 3) ? 'aguas' : 'seca';
+      est[a.regime][k].g += g; est[a.regime][k].d += n;
+    }
+  });
+
+  // sal e ração
+  const salLinhas = new Map();
+  const porManga = new Map();
+  D.sal.forEach(x => {
+    const chave = `${x.fazenda}||${x.manga}||${x.produto || ''}`;
+    if (!porManga.has(chave)) porManga.set(chave, []);
+    porManga.get(chave).push(x);
+  });
+  porManga.forEach((lista, chave) => {
+    lista.sort((x, y) => String(x.data).localeCompare(String(y.data)));
+    const ehRacao = /ra[cç][aã]o/i.test(lista[0].produto || '') || /ra[cç]/i.test(lista[0].manga || '');
+    const regime = ehRacao ? 'TIP' : 'Pasto';
+    const preco = ehRacao ? D.p.racao_tip_preco_kg : D.p.sal_preco_kg;
+    let forn = 0, resid = 0, liq = 0, regs = 0, denom = 0, num = 0, cabs = [];
+    lista.forEach((x, i) => {
+      const d = String(x.data).slice(0, 10);
+      if (d < W0 || d > W1) return;
+      const f = Number(x.fornecido_kg) || 0, rs = Number(x.residuo_kg) || 0;
+      const ef = Math.max(f - rs, 0);
+      forn += f; resid += rs; liq += ef; regs++;
+      if (x.cabecas) cabs.push(Number(x.cabecas));
+      const ant = i > 0 ? String(lista[i - 1].data).slice(0, 10) : null;
+      if (ant && x.cabecas && dias(ant, d) > 0) { num += ef; denom += dias(ant, d) * Number(x.cabecas); }
+    });
+    if (!regs) return;
+    const cab = cabs.length ? cabs.reduce((a, b) => a + b, 0) / cabs.length : null;
+    const custo = liq * preco;
+    salLinhas.set(chave, { fazenda: lista[0].fazenda, manga: lista[0].manga, produto: lista[0].produto || '—', regime, regs, forn, resid, liq, cab, consumo: denom ? num / denom : null, custo });
+    if (ehRacao) { reg.TIP.racaoKg += liq; reg.TIP.custoRacao += custo; }
+    else { reg.Pasto.salKg += liq; reg.Pasto.custoSal += custo; }
+  });
+
+  // custo operacional (prorata dos dias do período) e rateio por cabeças-dia
+  const contas = new Map();
+  let ultimaDespesa = null;
+  D.custos.forEach(c => {
+    const m0 = String(c.mes).slice(0, 10);
+    const m = dt(m0);
+    const mFim = new Date(m.getFullYear(), m.getMonth() + 1, 0).toISOString().slice(0, 10);
+    ultimaDespesa = !ultimaDespesa || mFim > ultimaDespesa ? mFim : ultimaDespesa;
+    const s = maxD(W0, m0), e = minD(W1, mFim);
+    if (e < s) return;
+    const frac = (dias(s, e) + 1) / (dias(m0, mFim) + 1);
+    const v = Number(c.valor) * frac;
+    contas.set(c.conta, (contas.get(c.conta) || 0) + v);
+  });
+  let custoOpTotal = 0;
+  contas.forEach((v, k) => { if (!contasFora.has(k)) custoOpTotal += v; });
+  const cabDiaTotal = REGIMES.reduce((s, r) => s + reg[r].cabDia, 0);
+  REGIMES.forEach(r => { reg[r].custoOp = cabDiaTotal ? custoOpTotal * reg[r].cabDia / cabDiaTotal : 0; });
+
+  document.getElementById('indAviso').textContent = (ultimaDespesa && W1 > ultimaDespesa)
+    ? `Atenção: só há despesas lançadas até ${dataBR(ultimaDespesa)}; o custo operacional do período fica incompleto.` : '';
+
+  // ---------- tela ----------
+  const linhasResumo = REGIMES.map(r => {
+    const x = reg[r];
+    const gmd = x.diasGanho ? x.ganho / x.diasGanho : null;
+    const ganhoEst = gmd !== null ? gmd * x.cabDia : 0;      // GMD dos animais pesados x todas as cabeças-dia do regime
+    const arrobas = ganhoEst / arroba;
+    const custoTotal = x.custoSal + x.custoRacao + x.custoOp;
+    return { regime: r, ...x, gmd, ganhoEst, arrobas, custoTotal, custoCabDia: x.cabDia ? custoTotal / x.cabDia : null, custoArroba: arrobas > 0 ? custoTotal / arrobas : null };
+  });
+  const tot = linhasResumo.reduce((t, x) => ({ cabDia: t.cabDia + x.cabDia, ganhoEst: t.ganhoEst + x.ganhoEst, ganho: t.ganho + x.ganho, diasGanho: t.diasGanho + x.diasGanho, custoTotal: t.custoTotal + x.custoTotal, animais: t.animais + x.animais, salKg: t.salKg + x.salKg, racaoKg: t.racaoKg + x.racaoKg, custoSal: t.custoSal + x.custoSal, custoRacao: t.custoRacao + x.custoRacao, custoOp: t.custoOp + x.custoOp, descartados: t.descartados + x.descartados }),
+    { cabDia: 0, ganhoEst: 0, ganho: 0, diasGanho: 0, custoTotal: 0, animais: 0, salKg: 0, racaoKg: 0, custoSal: 0, custoRacao: 0, custoOp: 0, descartados: 0 });
+  const obs = { Confinamento: 'Sem ração do confinamento registrada: custo incompleto', TIP: 'Ração da TIP sem o preço do DDG: custo subestimado', Pasto: '' };
+
+  document.getElementById('indResumo').innerHTML = `
+    <table><thead><tr>
+      <th>Regime</th><th class="ind-num">Animais ativos</th><th class="ind-num">Cabeças-dia</th><th class="ind-num">Ganho estimado (kg)</th><th class="ind-num">@ produzidas</th><th class="ind-num">GMD (kg/dia)</th>
+      <th class="ind-num">Sal (kg)</th><th class="ind-num">Ração (kg)</th><th class="ind-num">Custo sal + ração</th><th class="ind-num">Custo operacional rateado</th><th class="ind-num">Custo total</th><th class="ind-num">Custo / cabeça / dia</th><th class="ind-num">Custo por @</th>
+    </tr></thead><tbody>
+      ${linhasResumo.map(x => `<tr title="${obs[x.regime]}">
+        <td><b style="color:var(--text)">${x.regime}</b>${obs[x.regime] ? `<div style="font-size:10px;color:var(--text-dim)">${obs[x.regime]}</div>` : ''}</td>
+        <td class="ind-num">${fmt(x.animais)}</td><td class="ind-num">${fmt(x.cabDia)}</td><td class="ind-num">${fmt(x.ganhoEst)}</td><td class="ind-num">${fmt(x.arrobas, 1)}</td>
+        <td class="ind-num"><b style="color:var(--text)">${fmt(x.gmd, 3)}</b></td>
+        <td class="ind-num">${fmt(x.salKg)}</td><td class="ind-num">${fmt(x.racaoKg)}</td><td class="ind-num">${brl(x.custoSal + x.custoRacao)}</td><td class="ind-num">${brl(x.custoOp)}</td>
+        <td class="ind-num">${brl(x.custoTotal)}</td><td class="ind-num">${brl(x.custoCabDia)}</td><td class="ind-num"><b style="color:var(--text)">${brl(x.custoArroba)}</b></td></tr>`).join('')}
+      <tr style="border-top:1px solid var(--border)"><td><b style="color:var(--text)">Total</b></td>
+        <td class="ind-num">${fmt(tot.animais)}</td><td class="ind-num">${fmt(tot.cabDia)}</td><td class="ind-num">${fmt(tot.ganhoEst)}</td><td class="ind-num">${fmt(tot.ganhoEst / arroba, 1)}</td>
+        <td class="ind-num"><b style="color:var(--text)">${fmt(tot.diasGanho ? tot.ganho / tot.diasGanho : null, 3)}</b></td>
+        <td class="ind-num">${fmt(tot.salKg)}</td><td class="ind-num">${fmt(tot.racaoKg)}</td><td class="ind-num">${brl(tot.custoSal + tot.custoRacao)}</td><td class="ind-num">${brl(tot.custoOp)}</td>
+        <td class="ind-num">${brl(tot.custoTotal)}</td><td class="ind-num">${brl(tot.cabDia ? tot.custoTotal / tot.cabDia : null)}</td><td class="ind-num"><b style="color:var(--text)">${brl(tot.ganhoEst > 0 ? tot.custoTotal / (tot.ganhoEst / arroba) : null)}</b></td></tr>
+    </tbody></table>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">${tot.descartados ? `${tot.descartados} animal(is) ficaram fora do ganho por terem GMD fora do normal (provável erro de pesagem). ` : ''}Custo operacional do período: ${brl(tot.custoOp)} (rateado pelas cabeças-dia).</div>`;
+
+  const gm = o => o.d ? o.g / o.d : null;
+  document.getElementById('indEstacao').innerHTML = `
+    <table><thead><tr><th>Regime</th><th class="ind-num">GMD águas</th><th class="ind-num">Dias-animal águas</th><th class="ind-num">GMD seca</th><th class="ind-num">Dias-animal seca</th><th class="ind-num">GMD geral</th></tr></thead><tbody>
+    ${REGIMES.map(r => `<tr><td><b style="color:var(--text)">${r}</b></td>
+      <td class="ind-num">${fmt(gm(est[r].aguas), 3)}</td><td class="ind-num">${fmt(est[r].aguas.d)}</td>
+      <td class="ind-num">${fmt(gm(est[r].seca), 3)}</td><td class="ind-num">${fmt(est[r].seca.d)}</td>
+      <td class="ind-num">${fmt(gm({ g: est[r].aguas.g + est[r].seca.g, d: est[r].aguas.d + est[r].seca.d }), 3)}</td></tr>`).join('')}
+    </tbody></table>`;
+
+  const lSal = [...salLinhas.values()].sort((a, b) => a.fazenda.localeCompare(b.fazenda) || a.manga.localeCompare(b.manga));
+  document.getElementById('indSal').innerHTML = lSal.length === 0 ? '<p style="color:var(--text-dim);font-size:13px">Nenhum registro de consumo no período.</p>' : `
+    <table><thead><tr><th>Fazenda</th><th>Manga</th><th>Produto</th><th class="ind-num">Registros</th><th class="ind-num">Fornecido (kg)</th><th class="ind-num">Resíduo (kg)</th><th class="ind-num">Consumido (kg)</th><th class="ind-num">Cabeças</th><th class="ind-num">kg / cabeça / dia</th><th class="ind-num">Custo</th></tr></thead><tbody>
+    ${lSal.map(x => `<tr><td>${x.fazenda}</td><td>${x.manga}</td><td>${x.produto}</td><td class="ind-num">${x.regs}</td><td class="ind-num">${fmt(x.forn)}</td><td class="ind-num">${fmt(x.resid)}</td><td class="ind-num">${fmt(x.liq)}</td><td class="ind-num">${fmt(x.cab)}</td><td class="ind-num">${fmt(x.consumo, 3)}</td><td class="ind-num">${brl(x.custo)}</td></tr>`).join('')}
+    <tr style="border-top:1px solid var(--border)"><td colspan="6"><b style="color:var(--text)">Total</b></td><td class="ind-num"><b style="color:var(--text)">${fmt(lSal.reduce((s, x) => s + x.liq, 0))}</b></td><td></td><td></td><td class="ind-num"><b style="color:var(--text)">${brl(lSal.reduce((s, x) => s + x.custo, 0))}</b></td></tr>
+    </tbody></table>`;
+
+  const lContas = [...contas.entries()].sort((a, b) => b[1] - a[1]);
+  document.getElementById('indCustos').innerHTML = `
+    <table><thead><tr><th style="width:34px"></th><th>Conta</th><th class="ind-num">Valor no período</th></tr></thead><tbody>
+    ${lContas.map(([k, v]) => `<tr><td><input type="checkbox" ${contasFora.has(k) ? '' : 'checked'} onchange="alternarConta(this.dataset.c, this.checked)" data-c="${k.replace(/"/g, '&quot;')}"></td><td>${k}</td><td class="ind-num">${brl(v)}</td></tr>`).join('')}
+    <tr style="border-top:1px solid var(--border)"><td></td><td><b style="color:var(--text)">Total que entra no custo</b></td><td class="ind-num"><b style="color:var(--text)">${brl(custoOpTotal)}</b></td></tr>
+    </tbody></table>`;
+
+  ultimoCalculo = { W0, W1, linhasResumo, est, lSal, lContas, tot };
+}
+
+function alternarConta(conta, marcada) {
+  if (marcada) contasFora.delete(conta); else contasFora.add(conta);
+  calcularIndicadores();
+}
+
+function exportarIndicadores() {
+  if (!ultimoCalculo) return;
+  const u = ultimoCalculo;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(u.linhasResumo.map(x => ({
+    'Regime': x.regime, 'Animais ativos': x.animais, 'Cabeças-dia': x.cabDia, 'Ganho estimado (kg)': Math.round(x.ganhoEst), '@ produzidas': Number(x.arrobas.toFixed(1)),
+    'GMD (kg/dia)': x.gmd === null ? '' : Number(x.gmd.toFixed(3)), 'Sal (kg)': Math.round(x.salKg), 'Ração (kg)': Math.round(x.racaoKg),
+    'Custo sal + ração': Number((x.custoSal + x.custoRacao).toFixed(2)), 'Custo operacional rateado': Number(x.custoOp.toFixed(2)), 'Custo total': Number(x.custoTotal.toFixed(2)),
+    'Custo/cabeça/dia': x.custoCabDia === null ? '' : Number(x.custoCabDia.toFixed(2)), 'Custo por @': x.custoArroba === null ? '' : Number(x.custoArroba.toFixed(2)),
+  }))), 'Resumo por regime');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(REGIMES.map(r => ({
+    'Regime': r, 'GMD águas': u.est[r].aguas.d ? Number((u.est[r].aguas.g / u.est[r].aguas.d).toFixed(3)) : '', 'Dias-animal águas': u.est[r].aguas.d,
+    'GMD seca': u.est[r].seca.d ? Number((u.est[r].seca.g / u.est[r].seca.d).toFixed(3)) : '', 'Dias-animal seca': u.est[r].seca.d,
+  }))), 'GMD por estação');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(u.lSal.map(x => ({
+    'Fazenda': x.fazenda, 'Manga': x.manga, 'Produto': x.produto, 'Registros': x.regs, 'Fornecido (kg)': x.forn, 'Resíduo (kg)': x.resid, 'Consumido (kg)': x.liq,
+    'Cabeças': x.cab === null ? '' : Math.round(x.cab), 'kg/cabeça/dia': x.consumo === null ? '' : Number(x.consumo.toFixed(3)), 'Custo': Number(x.custo.toFixed(2)),
+  }))), 'Sal e ração');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(u.lContas.map(([k, v]) => ({ 'Conta': k, 'Valor no período': Number(v.toFixed(2)), 'Entra no custo': contasFora.has(k) ? 'não' : 'sim' }))), 'Custo operacional');
+  XLSX.writeFile(wb, `indicadores-topboi-${u.W0}-a-${u.W1}.xlsx`);
+}
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  try {
+    await carregarDados();
+    calcularIndicadores();
+  } catch (e) {
+    document.getElementById('indResumo').innerHTML = `<p style="color:var(--danger)">Erro ao carregar os dados: ${e.message || e}</p>`;
+  }
+})();
+</script>
+
+</body>
+</html>
