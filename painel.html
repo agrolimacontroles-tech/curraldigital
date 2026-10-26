@@ -134,14 +134,21 @@ async function carregarPainel() {
   await checkAuth();
   showUserEmail();
 
-  const [animais, { data: fazendas }, pesagensTodas] = await Promise.all([
+  const [animais, { data: fazendas, error: erroFazendas }, pesagensTodas] = await Promise.all([
     buscarPaginado(() => supabaseClient.from('vw_animais_resumo').select('*')),
     supabaseClient.from('fazendas').select('id, nome, confinamento').order('nome'),
     buscarPaginado(() => supabaseClient.from('pesagens').select('animal_id, data_pesagem, gmd_periodo').order('data_pesagem', { ascending: false })),
   ]);
 
+  if (erroFazendas) console.error('Erro ao carregar fazendas:', erroFazendas);
   todosFazendaOptions = fazendas || [];
-  FAZENDAS_CONFINAMENTO = new Set(todosFazendaOptions.filter(f => f.confinamento).map(f => f.id));
+  // se a lista de fazendas não vier, monta a partir dos próprios animais (a view traz o nome da fazenda)
+  if (todosFazendaOptions.length === 0) {
+    const mapa = new Map();
+    (animais || []).forEach(a => { if (a.fazenda_id && !mapa.has(a.fazenda_id)) mapa.set(a.fazenda_id, { id: a.fazenda_id, nome: a.fazenda_nome || 'Fazenda' }); });
+    todosFazendaOptions = [...mapa.values()].sort((x, y) => x.nome.localeCompare(y.nome));
+  }
+  FAZENDAS_CONFINAMENTO = new Set(todosFazendaOptions.filter(f => f.confinamento || /confinamento/i.test(f.nome || '')).map(f => f.id));
   document.getElementById('boxConfinamentoPainel').innerHTML = selectConfinamentoHtml('filtroConfinamentoPainel', 'renderPainelCompleto()');
   fazendasSelecionadas = carregarSelecaoFazendasSalva();
   // remove da seleção salva qualquer fazenda que não exista mais

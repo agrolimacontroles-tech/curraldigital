@@ -339,7 +339,7 @@ function carregarLogoBase64() {
 async function carregarFiltrosFazenda() {
   const sel = document.getElementById('filtroFazenda');
   const { data: fazendas } = await supabaseClient.from('fazendas').select('id, nome, confinamento').order('nome');
-  FAZENDAS_CONFINAMENTO = new Set((fazendas || []).filter(f => f.confinamento).map(f => f.id));
+  FAZENDAS_CONFINAMENTO = new Set((fazendas || []).filter(f => f.confinamento || /confinamento/i.test(f.nome || '')).map(f => f.id));
   document.getElementById('boxConfinamentoRel').innerHTML = selectConfinamentoHtml('filtroConfinamentoRel', 'aplicarFiltros()');
   sel.innerHTML = `<option value="">Todas as fazendas</option>` +
     (fazendas || []).map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
