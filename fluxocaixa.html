@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TopBoi — Fluxo de caixa</title>
+<link rel="icon" href="logo-agrolima.png" type="image/png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('fluxocaixa');
+
+document.getElementById('mainContent').innerHTML = `
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Fluxo de caixa <span id="fcAno"></span></div>
+      <div class="pagesub">Vendas, compras, despesas, mortes e saldo de gado por mês — clique em um valor para corrigir</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="fcSelAno" onchange="trocarAno(this.value)" class="fc-input"></select>
+      <button class="btn btn-secondary" onclick="exportarFluxo()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+    </div>
+  </div>
+  <div class="card"><div class="cardb" style="font-size:12px;color:var(--text-soft);line-height:1.6">
+    Lançado a partir da planilha "Fluxo de Caixa 2026". Despesas e compras aparecem negativas. Meses de <b>previsão</b> e valores marcados com <b>*</b> têm observação (passe o mouse).
+    Os números por mês <b>não são lançamentos por animal</b>: para o detalhe de cada venda use a tela Vendas.
+  </div></div>
+  <div class="card"><div class="cardb table-wrap" id="fcTabela"><span class="spinner"></span></div></div>
+
+  <div class="modal-overlay" id="modalFc" style="display:none">
+    <div class="modal-box" style="max-width:380px">
+      <div class="modal-head"><span id="fcTitulo">Editar</span><button class="modal-close" onclick="fecharFc()">&times;</button></div>
+      <div class="modal-body">
+        <div id="msgFc" class="msg"></div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Quantidade (cabeças)</label><input id="fcQtd" type="number" step="1"></div>
+          <div class="fgroup"><label id="fcRotuloValor">Valor (R$)</label><input id="fcValor" type="number" step="0.01"></div>
+          <div class="fgroup"><label>Observação</label><input id="fcObs" type="text"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" onclick="salvarFc()">Salvar</button>
+        <button class="btn btn-danger" onclick="limparFc()">Apagar valor</button>
+        <button class="btn btn-secondary" onclick="fecharFc()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+`;
+
+const st = document.createElement('style');
+st.textContent = `.fc-input{background:var(--bg-input);border:0.5px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:13px}
+#fcTabela table{min-width:1180px} #fcTabela td,#fcTabela th{white-space:nowrap}
+.fc-cel{cursor:pointer;text-align:right;line-height:1.25} .fc-cel:hover{background:var(--bg-input)}
+.fc-qtd{display:block;font-size:10px;color:var(--text-dim)} .fc-neg{color:var(--danger)} .fc-pos{color:var(--success)}`;
+document.head.appendChild(st);
+
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const SO_QTD = new Set(['Mortes', 'Saldo de gado']);                    // linhas só com quantidade
+const PERCENTUAL = new Set(['Crescimento do rebanho (%)']);
+const SEM_TOTAL = new Set(['Caixa', 'Crescimento do rebanho (%)', 'Saldo de gado']);
+const COM_QTD = new Set(['Vendas boi', 'Vendas garrotes', 'Compras', 'Mortes', 'Saldo de gado']);
+let ANO = new Date().getFullYear(), DADOS = [], editando = null;
+
+const fmtNum = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const brl = v => 'R$ ' + fmtNum(v, 2);
+
+async function carregarFluxo() {
+  DADOS = await buscarPaginado(() => supabaseClient.from('fluxo_caixa_mensal').select('*').order('ano').order('ordem').order('mes'));
+  const anos = [...new Set(DADOS.map(d => d.ano))].sort();
+  if (!anos.includes(ANO)) ANO = anos.length ? anos[anos.length - 1] : ANO;
+  document.getElementById('fcSelAno').innerHTML = (anos.length ? anos : [ANO]).map(a => `<option value="${a}" ${a === ANO ? 'selected' : ''}>${a}</option>`).join('');
+  render();
+}
+function trocarAno(a) { ANO = Number(a); render(); }
+
+function linhasDoAno() {
+  const base = DADOS.filter(d => d.ano === ANO);
+  const nomes = new Map();
+  (base.length ? base : DADOS).forEach(d => { if (!nomes.has(d.linha)) nomes.set(d.linha, d.ordem); });
+  return [...nomes.entries()].sort((a, b) => a[1] - b[1]).map(([linha, ordem]) => ({ linha, ordem }));
+}
+
+function render() {
+  document.getElementById('fcAno').textContent = ANO;
+  const linhas = linhasDoAno();
+  const idx = new Map(DADOS.filter(d => d.ano === ANO).map(d => [`${d.linha}|${d.mes}`, d]));
+  const cel = (l, m) => {
+    const d = idx.get(`${l.linha}|${m}`);
+    let conteudo = '';
+    if (d) {
+      const partes = [];
+      if (d.quantidade !== null && d.quantidade !== undefined && COM_QTD.has(l.linha))
+        partes.push(SO_QTD.has(l.linha) ? `<b style="color:var(--text)">${fmtNum(d.quantidade)}</b>` : `<span class="fc-qtd">${fmtNum(d.quantidade)} cab.</span>`);
+      if (d.valor !== null && d.valor !== undefined) {
+        const v = Number(d.valor);
+        partes.push(PERCENTUAL.has(l.linha) ? `<span class="${v < 0 ? 'fc-neg' : 'fc-pos'}">${fmtNum(v, 2)}%</span>` : `<span class="${v < 0 ? 'fc-neg' : (v > 0 ? 'fc-pos' : '')}">${v === 0 ? '—' : brl(v)}</span>`);
+      }
+      conteudo = partes.join('') + (d.observacao ? `<span title="${String(d.observacao).replace(/"/g, '&quot;')}"> *</span>` : '');
+    }
+    return `<td class="fc-cel" onclick="abrirFc('${l.linha.replace(/'/g, "\\'")}', ${m})">${conteudo || '<span style="color:var(--text-dim)">·</span>'}</td>`;
+  };
+  const total = l => {
+    if (SEM_TOTAL.has(l.linha)) return '<td></td>';
+    let q = 0, v = 0, temQ = false;
+    for (let m = 1; m <= 12; m++) {
+      const d = idx.get(`${l.linha}|${m}`);
+      if (!d || d.observacao === 'previsão') continue;      // total só do realizado
+      if (d.quantidade !== null && d.quantidade !== undefined) { q += Number(d.quantidade); temQ = true; }
+      if (d.valor !== null && d.valor !== undefined) v += Number(d.valor);
+    }
+    if (SO_QTD.has(l.linha)) return `<td class="fc-cel" style="cursor:default"><b style="color:var(--text)">${fmtNum(q)}</b></td>`;
+    return `<td class="fc-cel" style="cursor:default"><b>${temQ ? `<span class="fc-qtd">${fmtNum(q)} cab.</span>` : ''}<span class="${v < 0 ? 'fc-neg' : 'fc-pos'}">${brl(v)}</span></b></td>`;
+  };
+  document.getElementById('fcTabela').innerHTML = `
+    <table><thead><tr><th>Linha</th>${MESES.map(m => `<th style="text-align:right">${m}</th>`).join('')}<th style="text-align:right">Total realizado</th></tr></thead><tbody>
+    ${linhas.map(l => `<tr><td><b style="color:var(--text)">${l.linha}</b></td>${MESES.map((_, i) => cel(l, i + 1)).join('')}${total(l)}</tr>`).join('')}
+    </tbody></table>`;
+}
+
+function abrirFc(linha, mes) {
+  const d = DADOS.find(x => x.ano === ANO && x.linha === linha && x.mes === mes);
+  const l = linhasDoAno().find(x => x.linha === linha);
+  editando = { linha, mes, ordem: l ? l.ordem : 0 };
+  document.getElementById('fcTitulo').textContent = `${linha} — ${MESES[mes - 1]}/${ANO}`;
+  document.getElementById('fcRotuloValor').textContent = PERCENTUAL.has(linha) ? 'Valor (%)' : 'Valor (R$)';
+  document.getElementById('fcQtd').value = d && d.quantidade !== null ? d.quantidade : '';
+  document.getElementById('fcValor').value = d && d.valor !== null ? d.valor : '';
+  document.getElementById('fcObs').value = d && d.observacao ? d.observacao : '';
+  document.getElementById('fcQtd').parentElement.style.display = COM_QTD.has(linha) ? '' : 'none';
+  document.getElementById('fcValor').parentElement.style.display = SO_QTD.has(linha) ? 'none' : '';
+  document.getElementById('msgFc').className = 'msg';
+  document.getElementById('modalFc').style.display = 'flex';
+}
+function fecharFc() { document.getElementById('modalFc').style.display = 'none'; }
+
+async function salvarFc() {
+  const q = document.getElementById('fcQtd').value, v = document.getElementById('fcValor').value, o = document.getElementById('fcObs').value.trim();
+  const reg = { ano: ANO, mes: editando.mes, linha: editando.linha, ordem: editando.ordem, quantidade: q === '' ? null : Number(q), valor: v === '' ? null : Number(v), observacao: o || null };
+  const { error } = await supabaseClient.from('fluxo_caixa_mensal').upsert(reg, { onConflict: 'ano,mes,linha' });
+  if (error) { const m = document.getElementById('msgFc'); m.textContent = 'Erro: ' + error.message; m.className = 'msg show error'; return; }
+  fecharFc(); await carregarFluxo();
+}
+async function limparFc() {
+  if (!confirm('Apagar o valor deste mês?')) return;
+  const { error } = await supabaseClient.from('fluxo_caixa_mensal').delete().eq('ano', ANO).eq('linha', editando.linha).eq('mes', editando.mes);
+  if (error) { alert('Erro: ' + error.message); return; }
+  fecharFc(); await carregarFluxo();
+}
+
+function exportarFluxo() {
+  const linhas = linhasDoAno();
+  const rows = [];
+  linhas.forEach(l => {
+    const q = { Linha: l.linha + (COM_QTD.has(l.linha) && !SO_QTD.has(l.linha) ? ' (cabeças)' : '') }, v = { Linha: l.linha + (PERCENTUAL.has(l.linha) ? ' (%)' : SO_QTD.has(l.linha) ? '' : ' (R$)') };
+    MESES.forEach((n, i) => {
+      const d = DADOS.find(x => x.ano === ANO && x.linha === l.linha && x.mes === i + 1);
+      q[n] = d && d.quantidade !== null ? Number(d.quantidade) : ''; v[n] = d && d.valor !== null ? Number(d.valor) : '';
+    });
+    if (COM_QTD.has(l.linha)) rows.push(SO_QTD.has(l.linha) ? { ...q, Linha: l.linha } : q);
+    if (!SO_QTD.has(l.linha)) rows.push(v);
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Fluxo de caixa ' + ANO);
+  XLSX.writeFile(wb, `fluxo-de-caixa-${ANO}.xlsx`);
+}
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  try { await carregarFluxo(); }
+  catch (e) { document.getElementById('fcTabela').innerHTML = `<p style="color:var(--danger)">Erro ao carregar: ${e.message || e}</p>`; }
+})();
+</script>
+
+</body>
+</html>

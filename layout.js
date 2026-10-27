@@ -16,6 +16,7 @@ const MENU_ITEMS = [
   { page: 'compras',    label: 'Compras',    icon: 'ti-shopping-cart' },
   { page: 'vendas',     label: 'Vendas',     icon: 'ti-currency-dollar' },
   { page: 'indicadores', label: 'Indicadores', icon: 'ti-chart-line' },
+  { page: 'fluxocaixa', label: 'Fluxo de caixa', icon: 'ti-cash' },
   { page: 'relatorios', label: 'Relatórios', icon: 'ti-chart-bar' },
 ];
 
