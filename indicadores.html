@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TopBoi — Indicadores</title>
+<title>SISBOI — Indicadores</title>
 <link rel="icon" href="logo-agrolima.png" type="image/png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
@@ -41,7 +41,7 @@ document.getElementById('mainContent').innerHTML = `
       <b>Ganho e GMD:</b> variação do peso de cada animal dentro do período, entre a primeira e a última pesagem (a entrada conta como pesagem). GMD = ganho total ÷ dias de acompanhamento.
       <b>Ganho estimado</b> = GMD do regime × cabeças-dia do regime (assim animais sem pesagem no período também entram). <b>@ produzida</b> = ganho estimado ÷ <span id="indArrobaKg">30</span> kg (peso vivo, o mesmo critério da tela de Vendas).<br>
       <b>Sal e ração:</b> kg fornecido menos o resíduo do cocho, da planilha de consumo, × o preço de <span id="indPrecos"></span>.
-      <b>Custo operacional:</b> despesas do Top Boi lançadas no SISBOI, rateadas pelos dias do período e depois pelas cabeças-dia de cada regime.
+      <b>Custo operacional:</b> despesas do Top Boi lançadas no AGRO LIMA, rateadas pelos dias do período e depois pelas cabeças-dia de cada regime.
     </div>
   </div>
 
@@ -332,7 +332,7 @@ function exportarIndicadores() {
     'Cabeças': x.cab === null ? '' : Math.round(x.cab), 'kg/cabeça/dia': x.consumo === null ? '' : Number(x.consumo.toFixed(3)), 'Custo': Number(x.custo.toFixed(2)),
   }))), 'Sal e ração');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(u.lContas.map(([k, v]) => ({ 'Conta': k, 'Valor no período': Number(v.toFixed(2)), 'Entra no custo': contasFora.has(k) ? 'não' : 'sim' }))), 'Custo operacional');
-  XLSX.writeFile(wb, `indicadores-topboi-${u.W0}-a-${u.W1}.xlsx`);
+  XLSX.writeFile(wb, `indicadores-sisboi-${u.W0}-a-${u.W1}.xlsx`);
 }
 
 (async function init() {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TopBoi — Relatórios</title>
+<title>SISBOI — Relatórios</title>
 <link rel="icon" href="logo-agrolima.png" type="image/png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
@@ -754,7 +754,7 @@ async function baixarLogExclusoes() {
       'Pesagens excluidas'
     );
 
-    XLSX.writeFile(wb, `log-exclusoes-topboi-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `log-exclusoes-sisboi-${new Date().toISOString().slice(0, 10)}.xlsx`);
   } catch (err) {
     alert('Erro ao gerar o log: ' + (err.message || err));
   } finally {
@@ -789,7 +789,7 @@ async function baixarBackupCompleto() {
     const agora = new Date();
 
     const wsInfo = XLSX.utils.aoa_to_sheet([
-      ['Backup completo — TopBoi (AgroLima)'],
+      ['Backup completo — SISBOI (AgroLima)'],
       ['Gerado em', agora.toLocaleString('pt-BR')],
       [''],
       ['Esse arquivo é uma cópia bruta das tabelas do banco, uma aba por tabela,'],
@@ -806,7 +806,7 @@ async function baixarBackupCompleto() {
       XLSX.utils.book_append_sheet(wb, ws, t.aba);
     }
 
-    XLSX.writeFile(wb, `backup-topboi-${agora.toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `backup-sisboi-${agora.toISOString().slice(0, 10)}.xlsx`);
   } catch (err) {
     alert('Erro ao gerar o backup: ' + (err.message || err));
   } finally {
