@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SISBOI — Consumo</title>
+<link rel="icon" href="logo-agrolima.png" type="image/png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<script src="supabase-config.js"></script>
+<script src="layout.js"></script>
+<script>
+renderTopbarSidebar('consumo');
+
+document.getElementById('mainContent').innerHTML = `
+  <style>
+    .num{text-align:right;white-space:nowrap}
+    .dica{font-size:11px;color:var(--text-dim);margin-top:3px}
+    .previa{margin-top:4px;padding:10px 12px;background:var(--track-bg);border-radius:8px;font-size:12px;color:var(--text-soft);line-height:1.6}
+    .previa b{color:var(--text)}
+    .totrow td{border-top:1px solid var(--border);font-weight:600;color:var(--text)}
+  </style>
+
+  <div class="pagehead">
+    <div>
+      <div class="pagetitle">Consumo</div>
+      <div class="pagesub" id="subConsumo">Sal e ração fornecidos no cocho, por manga e por fazenda</div>
+    </div>
+    <button class="btn btn-secondary" id="btnExcel" style="display:none" onclick="baixarExcel()"><i class="ti ti-download"></i> Baixar Excel</button>
+  </div>
+
+  <div class="subtoggle">
+    <button class="stbtn active" id="btnAbaLancar" onclick="mostrarAba('lancar')">Lançar consumo</button>
+    <button class="stbtn" id="btnAbaHistorico" onclick="mostrarAba('historico')">Histórico</button>
+    <button class="stbtn" id="btnAbaManga" onclick="mostrarAba('manga')">Por manga</button>
+    <button class="stbtn" id="btnAbaFazenda" onclick="mostrarAba('fazenda')">Por fazenda</button>
+  </div>
+
+  <div id="barraFiltro" class="toolbar" style="display:none">
+    <select id="fltPeriodo" onchange="renderTudo()">
+      <option value="30">Últimos 30 dias</option>
+      <option value="90" selected>Últimos 90 dias</option>
+      <option value="180">Últimos 180 dias</option>
+      <option value="365">Último ano</option>
+      <option value="0">Todo o período</option>
+    </select>
+    <select id="fltFazenda" onchange="renderTudo()"><option value="">Todas as fazendas</option></select>
+    <select id="fltProduto" onchange="renderTudo()"><option value="">Todos os produtos</option></select>
+    <input id="fltBusca" placeholder="Buscar manga..." oninput="renderTudo()" style="min-width:160px">
+  </div>
+
+  <div id="metricasConsumo" class="metrics" style="display:none"></div>
+
+  <!-- ===== Lançar ===== -->
+  <div id="abaLancar">
+    <div id="msgConsumo" class="msg"></div>
+    <div class="card">
+      <div class="cardh"><i class="ti ti-salt"></i> <span id="tituloForm">Novo lançamento de consumo</span></div>
+      <div class="cardb">
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Fazenda *</label><select id="cFazenda" onchange="aoMudarFazenda()"></select></div>
+          <div class="fgroup">
+            <label>Manga *</label><select id="cManga" onchange="aoMudarManga()"></select>
+            <input id="cMangaOutra" placeholder="Nome da manga / curral" style="display:none;margin-top:6px" oninput="previaConsumo()">
+            <div class="dica" id="dicaManga"></div>
+          </div>
+          <div class="fgroup"><label>Data *</label><input type="date" id="cData" onchange="previaConsumo()"></div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup">
+            <label>Produto *</label><input id="cProduto" list="listaProdutos" placeholder="SAL ADENSADO" oninput="previaConsumo()">
+            <datalist id="listaProdutos"></datalist>
+          </div>
+          <div class="fgroup"><label>Cabeças na manga</label><input type="number" id="cCabecas" min="0" step="1" oninput="previaConsumo()"></div>
+          <div class="fgroup"><label>&nbsp;</label><div class="dica" id="dicaCabecas" style="margin-top:8px"></div></div>
+        </div>
+        <div class="frow cols-3">
+          <div class="fgroup"><label>Fornecido (kg) *</label><input type="number" id="cFornecido" min="0" step="0.1" oninput="previaConsumo()"></div>
+          <div class="fgroup"><label>Resíduo / sobra do cocho (kg)</label><input type="number" id="cResiduo" min="0" step="0.1" value="0" oninput="previaConsumo()"></div>
+          <div class="fgroup"><label>Observação</label><input id="cObs" placeholder="Opcional"></div>
+        </div>
+        <div id="previaConsumo" class="previa" style="display:none"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary" id="btnSalvarConsumo" onclick="salvarConsumo()"><i class="ti ti-check"></i> Registrar consumo</button>
+          <button class="btn btn-secondary" id="btnCancelarEdicao" onclick="limparForm()" style="display:none">Cancelar edição</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardh"><i class="ti ti-history"></i> Últimos lançamentos</div>
+      <div class="cardb table-wrap">
+        <table>
+          <thead><tr><th>Data</th><th>Fazenda</th><th>Manga</th><th>Produto</th><th class="num">Cabeças</th><th class="num">Fornecido (kg)</th><th class="num">Resíduo (kg)</th><th class="num">kg/cab./dia</th><th></th></tr></thead>
+          <tbody id="tbUltimos"><tr class="empty-row"><td colspan="9"><span class="spinner"></span> Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Histórico ===== -->
+  <div id="abaHistorico" style="display:none">
+    <div class="card">
+      <div class="cardb table-wrap">
+        <table>
+          <thead><tr><th>Data</th><th>Fazenda</th><th>Manga</th><th>Produto</th><th class="num">Cabeças</th><th class="num">Fornecido (kg)</th><th class="num">Resíduo (kg)</th><th class="num">Consumido (kg)</th><th class="num">Intervalo</th><th class="num">kg/cab./dia</th><th>Obs.</th><th></th></tr></thead>
+          <tbody id="tbHistorico"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Por manga ===== -->
+  <div id="abaManga" style="display:none">
+    <div class="card">
+      <div class="cardh"><i class="ti ti-fence"></i> Consumo por manga no período</div>
+      <div class="cardb table-wrap">
+        <table>
+          <thead><tr><th>Fazenda</th><th>Manga</th><th>Produto</th><th class="num">Lanç.</th><th class="num">Fornecido (kg)</th><th class="num">Resíduo (kg)</th><th class="num">Consumido (kg)</th><th class="num">Cabeças (média)</th><th class="num">kg/cab./dia</th><th class="num">Custo (R$)</th><th>Último lançamento</th></tr></thead>
+          <tbody id="tbManga"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Por fazenda ===== -->
+  <div id="abaFazenda" style="display:none">
+    <div class="card">
+      <div class="cardh"><i class="ti ti-building-warehouse"></i> Consumo por fazenda no período</div>
+      <div class="cardb table-wrap">
+        <table>
+          <thead><tr><th>Fazenda</th><th class="num">Mangas</th><th class="num">Lanç.</th><th class="num">Sal (kg)</th><th class="num">Ração (kg)</th><th class="num">Resíduo (kg)</th><th class="num">kg/cab./dia</th><th class="num">Custo sal (R$)</th><th class="num">Custo ração (R$)</th><th class="num">Custo total (R$)</th></tr></thead>
+          <tbody id="tbFazenda"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardb" style="font-size:12px;color:var(--text-soft);line-height:1.6">
+        <b>Como é calculado:</b> consumido = fornecido − resíduo do cocho. O consumo por cabeça por dia usa o intervalo desde o lançamento anterior da mesma manga e produto
+        (consumido ÷ dias ÷ cabeças). O custo usa <span id="textoPrecos"></span> (os mesmos preços da tela Indicadores).
+      </div>
+    </div>
+  </div>
+`;
+
+// ---------- utilidades ----------
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const fmt = (v, d = 0) => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const brl = v => 'R$ ' + fmt(v, 2);
+const dataBR = s => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+const hojeISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const diasEntre = (a, b) => Math.round((new Date(String(b).slice(0, 10) + 'T00:00:00') - new Date(String(a).slice(0, 10) + 'T00:00:00')) / 86400000);
+const somaDias = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const ehRacao = r => /ra[cç][aã]o/i.test(r.produto || '') || /ra[cç]/i.test(r.manga || '');
+const nomeMangaTexto = numero => /^\d/.test(String(numero)) ? 'MANGA ' + numero : String(numero);
+const normProduto = s => String(s || '').trim().toUpperCase();
+const PRODUTOS_PADRAO = ['SAL ADENSADO', 'SAL DAS VACAS', 'RAÇÃO DOS BOIS'];
+
+let FAZ = [], MANGAS = [], REG = [], ATIVOS = new Map(), PRECO = { sal: 3.76, racao: 1.83 };
+let editandoId = null;
+let abaAtual = 'lancar';
+
+function chaveGrupo(r) {
+  const base = r.manga_id ? 'm:' + r.manga_id : 't:' + String(r.fazenda || '').trim().toUpperCase() + '|' + String(r.manga || '').trim().toUpperCase();
+  return base + '|' + normProduto(r.produto);
+}
+
+// ---------- carregamento ----------
+async function carregar() {
+  const [{ data: faz }, { data: mangas }, reg, ativos, { data: params }] = await Promise.all([
+    supabaseClient.from('fazendas').select('id, nome, capacidade, confinamento').order('nome'),
+    supabaseClient.from('mangas').select('id, numero, fazenda_id').order('numero'),
+    buscarPaginado(() => supabaseClient.from('sal_consumo').select('*').order('data', { ascending: true }).order('id', { ascending: true })),
+    buscarPaginado(() => supabaseClient.from('animais').select('manga_id').eq('status', 'ativo')),
+    supabaseClient.from('indicador_parametros').select('chave, valor'),
+  ]);
+  FAZ = faz || [];
+  MANGAS = mangas || [];
+  REG = reg || [];
+  ATIVOS = new Map();
+  (ativos || []).forEach(a => { if (a.manga_id) ATIVOS.set(a.manga_id, (ATIVOS.get(a.manga_id) || 0) + 1); });
+  (params || []).forEach(p => {
+    if (p.chave === 'sal_preco_kg') PRECO.sal = Number(p.valor);
+    if (p.chave === 'racao_tip_preco_kg') PRECO.racao = Number(p.valor);
+  });
+  $('textoPrecos').textContent = `R$ ${fmt(PRECO.sal, 2)}/kg para sal e R$ ${fmt(PRECO.racao, 2)}/kg para ração`;
+  calcularRegistros();
+  montarSelects();
+}
+
+// intervalo e consumo de cada registro (em relação ao anterior da mesma manga + produto)
+function calcularRegistros() {
+  const grupos = new Map();
+  REG.forEach(r => {
+    const k = chaveGrupo(r);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  });
+  grupos.forEach(lista => {
+    lista.sort((a, b) => String(a.data).localeCompare(String(b.data)) || a.id - b.id);
+    lista.forEach((r, i) => {
+      const ant = i > 0 ? lista[i - 1] : null;
+      r._liq = Math.max((Number(r.fornecido_kg) || 0) - (Number(r.residuo_kg) || 0), 0);
+      r._int = ant ? diasEntre(ant.data, r.data) : null;
+      r._cons = (r._int > 0 && Number(r.cabecas) > 0) ? r._liq / (r._int * Number(r.cabecas)) : null;
+      r._racao = ehRacao(r);
+    });
+  });
+}
+
+function montarSelects() {
+  $('cFazenda').innerHTML = '<option value="">Selecione...</option>' + FAZ.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+  $('fltFazenda').innerHTML = '<option value="">Todas as fazendas</option>' + FAZ.map(f => `<option value="${esc(f.nome)}">${esc(f.nome)}</option>`).join('');
+  const prods = [...new Set([...PRODUTOS_PADRAO, ...REG.map(r => normProduto(r.produto)).filter(Boolean)])].sort();
+  $('listaProdutos').innerHTML = prods.map(p => `<option value="${esc(p)}"></option>`).join('');
+  const atual = $('fltProduto').value;
+  $('fltProduto').innerHTML = '<option value="">Todos os produtos</option>' + prods.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  $('fltProduto').value = atual;
+  aoMudarFazenda();
+}
+
+// ---------- formulário ----------
+function aoMudarFazenda(mangaSelecionada) {
+  const fid = $('cFazenda').value;
+  const lista = MANGAS.filter(m => m.fazenda_id === fid);
+  $('cManga').innerHTML = (fid ? '<option value="">Selecione...</option>' : '<option value="">Escolha a fazenda primeiro</option>') +
+    lista.map(m => `<option value="${m.id}">${esc(m.numero)}${ATIVOS.get(m.id) ? ` — ${ATIVOS.get(m.id)} animais` : ''}</option>`).join('') +
+    (fid ? '<option value="outra">Outra (digitar o nome)</option>' : '');
+  if (mangaSelecionada !== undefined) $('cManga').value = mangaSelecionada;
+  aoMudarManga();
+}
+
+function aoMudarManga() {
+  const v = $('cManga').value;
+  $('cMangaOutra').style.display = v === 'outra' ? '' : 'none';
+  const n = v && v !== 'outra' ? (ATIVOS.get(v) || 0) : null;
+  $('dicaManga').textContent = '';
+  $('dicaCabecas').textContent = '';
+  if (n !== null) {
+    $('dicaCabecas').textContent = n ? `Preenchido com os ${n} animais ativos hoje nessa manga (pode ajustar).` : 'Nenhum animal ativo cadastrado nessa manga.';
+    if (!editandoId) $('cCabecas').value = n || '';
+  } else if (!editandoId && v !== 'outra') {
+    $('cCabecas').value = '';
+  }
+  previaConsumo();
+}
+
+function chaveDoForm() {
+  const m = $('cManga').value;
+  const faz = FAZ.find(f => f.id === $('cFazenda').value);
+  const prod = normProduto($('cProduto').value);
+  if (m && m !== 'outra') return 'm:' + m + '|' + prod;
+  const texto = $('cMangaOutra').value.trim().toUpperCase();
+  return 't:' + String(faz ? faz.nome : '').trim().toUpperCase() + '|' + texto + '|' + prod;
+}
+
+function previaConsumo() {
+  const el = $('previaConsumo');
+  const data = $('cData').value, produto = $('cProduto').value.trim();
+  const forn = parseFloat($('cFornecido').value), res = parseFloat($('cResiduo').value) || 0, cab = parseFloat($('cCabecas').value);
+  if (!data || !produto || isNaN(forn) || !$('cFazenda').value) { el.style.display = 'none'; return; }
+  const chave = chaveDoForm();
+  const doGrupo = REG.filter(r => chaveGrupo(r) === chave && r.id !== editandoId);
+  const anteriores = doGrupo.filter(r => String(r.data).slice(0, 10) < data).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  const ant = anteriores[anteriores.length - 1];
+  const liq = Math.max(forn - res, 0);
+  let html = `Consumido neste lançamento: <b>${fmt(liq, 1)} kg</b> (fornecido ${fmt(forn, 1)} − resíduo ${fmt(res, 1)}).`;
+  if (res > forn) html += ' <span style="color:var(--danger)">O resíduo é maior que o fornecido.</span>';
+  if (!ant) {
+    html += '<br>Primeiro lançamento dessa manga com esse produto: o consumo por cabeça só aparece a partir do próximo.';
+  } else {
+    const dias = diasEntre(ant.data, data);
+    if (dias > 0 && cab > 0) {
+      const cons = liq / (dias * cab);
+      const medias = doGrupo.filter(r => r._cons !== null).map(r => r._cons);
+      const media = medias.length ? medias.reduce((a, b) => a + b, 0) / medias.length : null;
+      html += `<br>Último lançamento em <b>${dataBR(ant.data)}</b> (${dias} dia${dias === 1 ? '' : 's'} atrás): consumo de <b>${fmt(cons, 3)} kg/cab./dia</b>`;
+      if (media) {
+        const dif = (cons / media - 1) * 100;
+        html += ` — média dessa manga ${fmt(media, 3)}` + (Math.abs(dif) >= 25 ? ` <span style="color:var(--warning)">(${dif > 0 ? 'acima' : 'abaixo'} da média em ${fmt(Math.abs(dif))}%, confira os números)</span>` : '');
+      }
+    } else if (dias <= 0) {
+      html += '<br><span style="color:var(--warning)">Já existe lançamento nessa data ou depois dela para essa manga.</span>';
+    } else {
+      html += '<br>Informe as cabeças para calcular o consumo por cabeça por dia.';
+    }
+  }
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+function mostrarMsg(texto, tipo) {
+  const el = $('msgConsumo');
+  el.textContent = texto;
+  el.className = 'msg show ' + tipo;
+  clearTimeout(mostrarMsg._t);
+  mostrarMsg._t = setTimeout(() => { el.className = 'msg'; }, 5000);
+}
+
+function limparForm(manterContexto) {
+  editandoId = null;
+  $('tituloForm').textContent = 'Novo lançamento de consumo';
+  $('btnSalvarConsumo').innerHTML = '<i class="ti ti-check"></i> Registrar consumo';
+  $('btnCancelarEdicao').style.display = 'none';
+  ['cFornecido', 'cObs'].forEach(id => { $(id).value = ''; });
+  $('cResiduo').value = '0';
+  if (!manterContexto) {
+    $('cFazenda').value = '';
+    aoMudarFazenda();
+    $('cProduto').value = '';
+    $('cMangaOutra').value = '';
+    $('cData').value = hojeISO();
+  } else {
+    aoMudarManga();
+  }
+  previaConsumo();
+}
+
+async function salvarConsumo() {
+  const faz = FAZ.find(f => f.id === $('cFazenda').value);
+  const mangaSel = $('cManga').value;
+  const manga = mangaSel && mangaSel !== 'outra' ? MANGAS.find(m => m.id === mangaSel) : null;
+  const mangaTexto = manga ? nomeMangaTexto(manga.numero) : $('cMangaOutra').value.trim();
+  const data = $('cData').value;
+  const produto = normProduto($('cProduto').value);
+  const forn = parseFloat($('cFornecido').value);
+  const res = parseFloat($('cResiduo').value) || 0;
+  const cab = $('cCabecas').value === '' ? null : parseInt($('cCabecas').value, 10);
+
+  if (!faz) return mostrarMsg('Escolha a fazenda.', 'error');
+  if (!mangaTexto) return mostrarMsg('Escolha a manga (ou digite o nome dela).', 'error');
+  if (!data) return mostrarMsg('Informe a data.', 'error');
+  if (!produto) return mostrarMsg('Informe o produto (sal adensado, ração...).', 'error');
+  if (isNaN(forn) || forn < 0) return mostrarMsg('Informe a quantidade fornecida em kg.', 'error');
+  if (res < 0) return mostrarMsg('O resíduo não pode ser negativo.', 'error');
+  if (res > forn) return mostrarMsg('O resíduo não pode ser maior que o fornecido.', 'error');
+  if (data > hojeISO() && !confirm('A data é no futuro. Salvar mesmo assim?')) return;
+
+  const chave = (manga ? 'm:' + manga.id : 't:' + faz.nome.trim().toUpperCase() + '|' + mangaTexto.toUpperCase()) + '|' + produto;
+  const mesmoDia = REG.some(r => chaveGrupo(r) === chave && String(r.data).slice(0, 10) === data && r.id !== editandoId);
+  if (mesmoDia && !confirm('Já existe um lançamento dessa manga, com esse produto, nessa mesma data. Salvar outro mesmo assim?')) return;
+
+  const payload = {
+    fazenda: faz.nome, manga: mangaTexto, data, produto, cabecas: cab, fornecido_kg: forn, residuo_kg: res,
+    observacao: $('cObs').value.trim() || null, fazenda_id: faz.id, manga_id: manga ? manga.id : null,
+  };
+
+  const btn = $('btnSalvarConsumo');
+  btn.disabled = true;
+  const { error } = editandoId
+    ? await supabaseClient.from('sal_consumo').update(payload).eq('id', editandoId)
+    : await supabaseClient.from('sal_consumo').insert(payload);
+  btn.disabled = false;
+  if (error) return mostrarMsg('Erro ao salvar: ' + error.message, 'error');
+
+  const foiEdicao = !!editandoId;
+  await recarregarRegistros();
+  limparForm(true);
+  mostrarMsg((foiEdicao ? 'Lançamento atualizado' : 'Consumo registrado') + ` — ${mangaTexto} (${faz.nome}).`, 'success');
+}
+
+async function recarregarRegistros() {
+  REG = await buscarPaginado(() => supabaseClient.from('sal_consumo').select('*').order('data', { ascending: true }).order('id', { ascending: true }));
+  calcularRegistros();
+  montarSelectsProdutos();
+  renderTudo();
+}
+
+function montarSelectsProdutos() {
+  const prods = [...new Set([...PRODUTOS_PADRAO, ...REG.map(r => normProduto(r.produto)).filter(Boolean)])].sort();
+  $('listaProdutos').innerHTML = prods.map(p => `<option value="${esc(p)}"></option>`).join('');
+  const atual = $('fltProduto').value;
+  $('fltProduto').innerHTML = '<option value="">Todos os produtos</option>' + prods.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  $('fltProduto').value = atual;
+}
+
+function editarConsumo(id) {
+  const r = REG.find(x => x.id === id);
+  if (!r) return;
+  editandoId = id;
+  mostrarAba('lancar');
+  let fid = r.fazenda_id;
+  if (!fid) { const f = FAZ.find(x => x.nome.trim().toUpperCase() === String(r.fazenda || '').trim().toUpperCase()); fid = f ? f.id : ''; }
+  $('cFazenda').value = fid || '';
+  aoMudarFazenda(r.manga_id ? r.manga_id : 'outra');
+  if (!r.manga_id) $('cMangaOutra').value = r.manga || '';
+  $('cData').value = String(r.data).slice(0, 10);
+  $('cProduto').value = r.produto || '';
+  $('cCabecas').value = r.cabecas ?? '';
+  $('cFornecido').value = r.fornecido_kg ?? '';
+  $('cResiduo').value = r.residuo_kg ?? 0;
+  $('cObs').value = r.observacao || '';
+  $('tituloForm').textContent = 'Editando lançamento';
+  $('btnSalvarConsumo').innerHTML = '<i class="ti ti-check"></i> Salvar alterações';
+  $('btnCancelarEdicao').style.display = '';
+  previaConsumo();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function excluirConsumo(id) {
+  const r = REG.find(x => x.id === id);
+  if (!r || !confirm(`Excluir o lançamento de ${dataBR(r.data)} — ${r.manga} (${r.fazenda})?`)) return;
+  const { error } = await supabaseClient.from('sal_consumo').delete().eq('id', id);
+  if (error) return alert('Não foi possível excluir: ' + error.message);
+  if (editandoId === id) limparForm(true);
+  await recarregarRegistros();
+}
+
+// ---------- filtros e telas ----------
+function filtrados() {
+  const dias = Number($('fltPeriodo').value);
+  const ate = hojeISO();
+  const de = dias ? somaDias(ate, -dias) : '0000-00-00';
+  const faz = $('fltFazenda').value, prod = $('fltProduto').value;
+  const busca = $('fltBusca').value.trim().toUpperCase();
+  return { de, ate, lista: REG.filter(r => {
+    const d = String(r.data).slice(0, 10);
+    if (d < de) return false;
+    if (faz && String(r.fazenda).trim().toUpperCase() !== faz.trim().toUpperCase()) return false;
+    if (prod && normProduto(r.produto) !== prod) return false;
+    if (busca && !String(r.manga || '').toUpperCase().includes(busca)) return false;
+    return true;
+  }) };
+}
+
+function mostrarAba(aba) {
+  abaAtual = aba;
+  ['lancar', 'historico', 'manga', 'fazenda'].forEach(a => {
+    const id = a[0].toUpperCase() + a.slice(1);
+    $('aba' + id).style.display = a === aba ? '' : 'none';
+    $('btnAba' + id).classList.toggle('active', a === aba);
+  });
+  const filtros = aba !== 'lancar';
+  $('barraFiltro').style.display = filtros ? '' : 'none';
+  $('metricasConsumo').style.display = filtros ? '' : 'none';
+  $('btnExcel').style.display = filtros ? '' : 'none';
+  $('fltBusca').style.display = (aba === 'historico' || aba === 'manga') ? '' : 'none';
+  renderTudo();
+}
+
+function renderTudo() {
+  renderUltimos();
+  if (abaAtual === 'lancar') return;
+  const { de, lista } = filtrados();
+  const grupos = agruparPorManga(lista);
+  const porFazenda = agruparPorFazenda(grupos);
+
+  const totSal = grupos.filter(g => !g.racao).reduce((s, g) => s + g.liq, 0);
+  const totRac = grupos.filter(g => g.racao).reduce((s, g) => s + g.liq, 0);
+  const custo = grupos.reduce((s, g) => s + g.custo, 0);
+  $('metricasConsumo').innerHTML = `
+    <div class="metric"><div class="micon bg-info"><i class="ti ti-list-details"></i></div><div><div class="mlabel">Lançamentos</div><div class="mval">${fmt(lista.length)}</div></div></div>
+    <div class="metric"><div class="micon bg-success"><i class="ti ti-salt"></i></div><div><div class="mlabel">Sal consumido</div><div class="mval">${fmt(totSal)} kg</div></div></div>
+    <div class="metric"><div class="micon bg-warning"><i class="ti ti-package"></i></div><div><div class="mlabel">Ração consumida</div><div class="mval">${fmt(totRac)} kg</div></div></div>
+    <div class="metric"><div class="micon bg-info"><i class="ti ti-currency-dollar"></i></div><div><div class="mlabel">Custo estimado</div><div class="mval">${brl(custo)}</div></div></div>`;
+  $('subConsumo').textContent = `Sal e ração fornecidos no cocho, por manga e por fazenda — ${REG.length} lançamentos no total`;
+
+  // histórico
+  const ordenada = lista.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)) || b.id - a.id);
+  const LIM = 500;
+  $('tbHistorico').innerHTML = ordenada.length === 0 ? '<tr class="empty-row"><td colspan="12">Nenhum lançamento nesse filtro.</td></tr>' :
+    ordenada.slice(0, LIM).map(r => `<tr>
+      <td>${dataBR(r.data)}</td><td>${esc(r.fazenda)}</td><td>${esc(r.manga)}</td><td>${esc(r.produto || '—')}</td>
+      <td class="num">${r.cabecas ?? '—'}</td><td class="num">${fmt(r.fornecido_kg, 1)}</td><td class="num">${fmt(r.residuo_kg, 1)}</td><td class="num">${fmt(r._liq, 1)}</td>
+      <td class="num">${r._int !== null ? r._int + ' d' : '—'}</td><td class="num"><b style="color:var(--text)">${fmt(r._cons, 3)}</b></td>
+      <td style="font-size:12px;color:var(--text-soft)">${esc(r.observacao || '')}</td>
+      <td style="white-space:nowrap">${botoesLinha(r.id)}</td></tr>`).join('') +
+    (ordenada.length > LIM ? `<tr class="empty-row"><td colspan="12">Mostrando os ${LIM} mais recentes de ${ordenada.length}. Use os filtros ou baixe o Excel para ver tudo.</td></tr>` : '');
+
+  // por manga
+  const hoje = hojeISO();
+  const gOrd = grupos.slice().sort((a, b) => a.fazenda.localeCompare(b.fazenda) || a.manga.localeCompare(b.manga, 'pt-BR', { numeric: true }) || a.produto.localeCompare(b.produto));
+  $('tbManga').innerHTML = gOrd.length === 0 ? '<tr class="empty-row"><td colspan="11">Nenhum lançamento nesse filtro.</td></tr>' :
+    gOrd.map(g => {
+      const dd = diasEntre(g.ultimo, hoje);
+      const cls = dd > 15 ? 'bg-danger' : dd > 7 ? 'bg-warning' : 'bg-success';
+      return `<tr><td>${esc(g.fazenda)}</td><td style="min-width:190px"><b style="color:var(--text)">${esc(g.manga)}</b>${g.animais ? ` <span style="color:var(--text-dim);font-size:11px">(${g.animais} animais hoje)</span>` : ''}</td><td>${esc(g.produto || '—')}</td>
+        <td class="num">${g.regs}</td><td class="num">${fmt(g.forn)}</td><td class="num">${fmt(g.resid)}</td><td class="num">${fmt(g.liq)}</td>
+        <td class="num">${g.cab !== null ? fmt(g.cab) : '—'}</td><td class="num"><b style="color:var(--text)">${fmt(g.consumo, 3)}</b></td><td class="num">${brl(g.custo)}</td>
+        <td>${dataBR(g.ultimo)} <span class="badge ${cls}">${dd <= 0 ? 'hoje' : 'há ' + dd + ' d'}</span></td></tr>`;
+    }).join('');
+
+  // por fazenda
+  const t = porFazenda.reduce((a, f) => ({ mangas: a.mangas + f.mangas, regs: a.regs + f.regs, sal: a.sal + f.sal, racao: a.racao + f.racao, resid: a.resid + f.resid, cSal: a.cSal + f.cSal, cRac: a.cRac + f.cRac, num: a.num + f.num, den: a.den + f.den }),
+    { mangas: 0, regs: 0, sal: 0, racao: 0, resid: 0, cSal: 0, cRac: 0, num: 0, den: 0 });
+  $('tbFazenda').innerHTML = porFazenda.length === 0 ? '<tr class="empty-row"><td colspan="10">Nenhum lançamento nesse filtro.</td></tr>' :
+    porFazenda.map(f => `<tr><td><b style="color:var(--text)">${esc(f.fazenda)}</b></td><td class="num">${f.mangas}</td><td class="num">${f.regs}</td>
+      <td class="num">${fmt(f.sal)}</td><td class="num">${fmt(f.racao)}</td><td class="num">${fmt(f.resid)}</td><td class="num"><b style="color:var(--text)">${fmt(f.den ? f.num / f.den : null, 3)}</b></td>
+      <td class="num">${brl(f.cSal)}</td><td class="num">${brl(f.cRac)}</td><td class="num"><b style="color:var(--text)">${brl(f.cSal + f.cRac)}</b></td></tr>`).join('') +
+    `<tr class="totrow"><td>Total</td><td class="num">${t.mangas}</td><td class="num">${t.regs}</td><td class="num">${fmt(t.sal)}</td><td class="num">${fmt(t.racao)}</td><td class="num">${fmt(t.resid)}</td>
+      <td class="num">${fmt(t.den ? t.num / t.den : null, 3)}</td><td class="num">${brl(t.cSal)}</td><td class="num">${brl(t.cRac)}</td><td class="num">${brl(t.cSal + t.cRac)}</td></tr>`;
+
+}
+
+function botoesLinha(id) {
+  return `<button class="btn btn-secondary" style="padding:4px 9px" title="Editar" onclick="editarConsumo(${id})"><i class="ti ti-pencil"></i></button>
+    <button class="btn btn-danger" style="padding:4px 9px" title="Excluir" onclick="excluirConsumo(${id})"><i class="ti ti-trash"></i></button>`;
+}
+
+function renderUltimos() {
+  const ult = REG.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)) || b.id - a.id).slice(0, 15);
+  $('tbUltimos').innerHTML = ult.length === 0 ? '<tr class="empty-row"><td colspan="9">Nenhum lançamento ainda.</td></tr>' :
+    ult.map(r => `<tr><td>${dataBR(r.data)}</td><td>${esc(r.fazenda)}</td><td>${esc(r.manga)}</td><td>${esc(r.produto || '—')}</td>
+      <td class="num">${r.cabecas ?? '—'}</td><td class="num">${fmt(r.fornecido_kg, 1)}</td><td class="num">${fmt(r.residuo_kg, 1)}</td><td class="num">${fmt(r._cons, 3)}</td>
+      <td style="white-space:nowrap">${botoesLinha(r.id)}</td></tr>`).join('');
+}
+
+// agrupa os registros do período por manga + produto
+function agruparPorManga(lista) {
+  const mapa = new Map();
+  lista.forEach(r => {
+    const k = chaveGrupo(r);
+    if (!mapa.has(k)) mapa.set(k, []);
+    mapa.get(k).push(r);
+  });
+  const saida = [];
+  mapa.forEach(regs => {
+    regs.sort((a, b) => String(a.data).localeCompare(String(b.data)) || a.id - b.id);
+    const r0 = regs[0];
+    const racao = r0._racao;
+    let forn = 0, resid = 0, liq = 0, num = 0, den = 0; const cabs = [];
+    regs.forEach(r => {
+      forn += Number(r.fornecido_kg) || 0; resid += Number(r.residuo_kg) || 0; liq += r._liq;
+      if (r.cabecas) cabs.push(Number(r.cabecas));
+      if (r._cons !== null) { num += r._liq; den += r._int * Number(r.cabecas); }
+    });
+    saida.push({
+      fazenda: r0.fazenda, manga: r0.manga, produto: normProduto(r0.produto), racao, regs: regs.length, forn, resid, liq, num, den,
+      cab: cabs.length ? cabs.reduce((a, b) => a + b, 0) / cabs.length : null,
+      consumo: den ? num / den : null,
+      custo: liq * (racao ? PRECO.racao : PRECO.sal),
+      ultimo: String(regs[regs.length - 1].data).slice(0, 10),
+      animais: r0.manga_id ? (ATIVOS.get(r0.manga_id) || 0) : 0,
+    });
+  });
+  return saida;
+}
+
+function agruparPorFazenda(grupos) {
+  const mapa = new Map();
+  grupos.forEach(g => {
+    const k = String(g.fazenda).trim().toUpperCase();
+    if (!mapa.has(k)) mapa.set(k, { fazenda: g.fazenda, mangas: new Set(), regs: 0, sal: 0, racao: 0, resid: 0, cSal: 0, cRac: 0, num: 0, den: 0 });
+    const f = mapa.get(k);
+    f.mangas.add(String(g.manga).trim().toUpperCase());
+    f.regs += g.regs; f.resid += g.resid; f.num += g.num; f.den += g.den;
+    if (g.racao) { f.racao += g.liq; f.cRac += g.custo; } else { f.sal += g.liq; f.cSal += g.custo; }
+  });
+  return [...mapa.values()].map(f => ({ ...f, mangas: f.mangas.size })).sort((a, b) => a.fazenda.localeCompare(b.fazenda));
+}
+
+// ---------- Excel ----------
+function baixarExcel() {
+  const { lista } = filtrados();
+  const grupos = agruparPorManga(lista).sort((a, b) => a.fazenda.localeCompare(b.fazenda) || a.manga.localeCompare(b.manga, 'pt-BR', { numeric: true }));
+  const porFaz = agruparPorFazenda(grupos);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porFaz.map(f => ({
+    'Fazenda': f.fazenda, 'Mangas': f.mangas, 'Lançamentos': f.regs, 'Sal (kg)': Math.round(f.sal), 'Ração (kg)': Math.round(f.racao), 'Resíduo (kg)': Math.round(f.resid),
+    'kg/cab./dia': f.den ? Number((f.num / f.den).toFixed(3)) : '', 'Custo sal (R$)': Number(f.cSal.toFixed(2)), 'Custo ração (R$)': Number(f.cRac.toFixed(2)), 'Custo total (R$)': Number((f.cSal + f.cRac).toFixed(2)),
+  }))), 'Por fazenda');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(grupos.map(g => ({
+    'Fazenda': g.fazenda, 'Manga': g.manga, 'Produto': g.produto, 'Lançamentos': g.regs, 'Fornecido (kg)': g.forn, 'Resíduo (kg)': g.resid, 'Consumido (kg)': g.liq,
+    'Cabeças (média)': g.cab === null ? '' : Math.round(g.cab), 'kg/cab./dia': g.consumo === null ? '' : Number(g.consumo.toFixed(3)), 'Custo (R$)': Number(g.custo.toFixed(2)), 'Último lançamento': dataBR(g.ultimo),
+  }))), 'Por manga');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lista.slice().sort((a, b) => String(a.data).localeCompare(String(b.data))).map(r => ({
+    'Data': dataBR(r.data), 'Fazenda': r.fazenda, 'Manga': r.manga, 'Produto': r.produto, 'Cabeças': r.cabecas ?? '', 'Fornecido (kg)': Number(r.fornecido_kg), 'Resíduo (kg)': Number(r.residuo_kg || 0),
+    'Consumido (kg)': r._liq, 'Intervalo (dias)': r._int ?? '', 'kg/cab./dia': r._cons === null ? '' : Number(r._cons.toFixed(3)), 'Observação': r.observacao || '',
+  }))), 'Lançamentos');
+  XLSX.writeFile(wb, `consumo-sisboi-${hojeISO()}.xlsx`);
+}
+
+(async function init() {
+  await checkAuth();
+  showUserEmail();
+  $('cData').value = hojeISO();
+  try {
+    await carregar();
+    renderTudo();
+  } catch (e) {
+    $('tbUltimos').innerHTML = `<tr class="empty-row"><td colspan="9" style="color:var(--danger)">Erro ao carregar: ${esc(e.message || e)}</td></tr>`;
+  }
+})();
+</script>
+
+</body>
+</html>

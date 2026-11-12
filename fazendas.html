@@ -18,6 +18,29 @@
 renderTopbarSidebar('fazendas');
 
 document.getElementById('mainContent').innerHTML = `
+  <style>
+    .cartoes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;align-items:start}
+    .fcard{background:var(--bg-panel);border:0.5px solid var(--border);border-radius:12px;overflow:hidden}
+    .fcard-head{padding:14px 16px 12px;border-bottom:0.5px solid var(--border)}
+    .fcard-nome{font-size:16px;font-weight:500;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .fcard-sub{font-size:12px;color:var(--text-dim);margin-top:3px}
+    .fcard-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 16px}
+    .fcard-stat .l{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px}
+    .fcard-stat .v{font-size:19px;font-weight:500;color:var(--text);margin-top:2px}
+    .fcard-ocup{padding:0 16px 12px}
+    .fcard-ocup .barra{background:var(--track-bg);border-radius:4px;height:8px;overflow:hidden}
+    .fcard-ocup .barra div{height:100%;border-radius:4px;background:var(--accent-bg)}
+    .fcard-mangas{border-top:0.5px solid var(--border);padding:10px 16px 6px}
+    .fcard-mangas .tit{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+    .mrow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px}
+    .mrow .mn{min-width:78px;max-width:110px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mrow .mb{flex:1;background:var(--track-bg);border-radius:3px;height:12px;overflow:hidden}
+    .mrow .mb div{height:100%;border-radius:3px;background:var(--accent-bg)}
+    .mrow .mq{min-width:26px;text-align:right;color:var(--text)}
+    .mrow.vazia .mn,.mrow.vazia .mq{color:var(--text-dim)}
+    .fcard-total{border-top:0.5px solid var(--border);padding:11px 16px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--text-soft)}
+    .fcard-total b{font-size:17px;color:var(--text);font-weight:500}
+  </style>
   <div class="pagehead">
     <div>
       <div class="pagetitle">Fazendas</div>
@@ -26,9 +49,14 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div class="subtoggle">
-    <button class="stbtn active" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
+    <button class="stbtn active" id="btnTabCartoes" onclick="mostrarAba('cartoes')">Visão geral</button>
+    <button class="stbtn" id="btnTabDashboard" onclick="mostrarAba('dashboard')">Dashboard</button>
     <button class="stbtn" id="btnTabLista" onclick="mostrarAba('lista')">Lista de fazendas</button>
     <button class="stbtn" id="btnTabCadastro" onclick="mostrarAba('cadastro')">Cadastrar fazenda</button>
+  </div>
+
+  <div id="abaCartoes">
+    <div id="cartoesFazendas" class="cartoes-grid"><div class="metric"><span class="spinner"></span></div></div>
   </div>
 
   <div id="abaLista" style="display:none">
@@ -94,7 +122,7 @@ document.getElementById('mainContent').innerHTML = `
     </div>
   </div>
 
-  <div id="abaDashboard">
+  <div id="abaDashboard" style="display:none">
     <div class="toolbar">
       <select id="filtroFazendaDash" onchange="renderDashboardFazenda()"><option value="">Todas as fazendas</option></select>
     </div>
@@ -120,6 +148,9 @@ document.getElementById('mainContent').innerHTML = `
 let fazendaEditandoId = null;
 
 function mostrarAba(aba) {
+  document.getElementById('abaCartoes').style.display = aba === 'cartoes' ? 'block' : 'none';
+  document.getElementById('btnTabCartoes').classList.toggle('active', aba === 'cartoes');
+  if (aba === 'cartoes') carregarCartoes();
   document.getElementById('abaLista').style.display = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaCadastro').style.display = aba === 'cadastro' ? 'block' : 'none';
   document.getElementById('abaDashboard').style.display = aba === 'dashboard' ? 'block' : 'none';
@@ -435,9 +466,75 @@ function renderLotesFazenda(ativos, lotesNoFiltro) {
       `).join('');
 }
 
+// ---------- Visão geral: um cartão por fazenda ----------
+async function carregarCartoes() {
+  const alvo = document.getElementById('cartoesFazendas');
+  try {
+    const [{ data: fazendas, error: e1 }, { data: mangas, error: e2 }, ativos] = await Promise.all([
+      supabaseClient.from('fazendas').select('*').order('nome'),
+      supabaseClient.from('mangas').select('id, numero, fazenda_id, capacidade'),
+      buscarPaginado(() => supabaseClient.from('animais').select('fazenda_id, manga_id').eq('status', 'ativo')),
+    ]);
+    if (e1 || e2) throw (e1 || e2);
+
+    document.getElementById('totalFazendas').textContent = `${fazendas.length} fazenda${fazendas.length === 1 ? '' : 's'} cadastrada${fazendas.length === 1 ? '' : 's'}`;
+    if (fazendas.length === 0) { alvo.innerHTML = '<p style="color:var(--text-dim)">Nenhuma fazenda cadastrada ainda.</p>'; return; }
+
+    const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const porManga = new Map(), porFazenda = new Map(), semManga = new Map();
+    ativos.forEach(a => {
+      porFazenda.set(a.fazenda_id, (porFazenda.get(a.fazenda_id) || 0) + 1);
+      if (a.manga_id) porManga.set(a.manga_id, (porManga.get(a.manga_id) || 0) + 1);
+      else semManga.set(a.fazenda_id, (semManga.get(a.fazenda_id) || 0) + 1);
+    });
+
+    alvo.innerHTML = fazendas.map(f => {
+      const ms = (mangas || []).filter(m => m.fazenda_id === f.id)
+        .sort((a, b) => String(a.numero).localeCompare(String(b.numero), 'pt-BR', { numeric: true }));
+      const cadastrados = porFazenda.get(f.id) || 0;
+      const semCad = Number(f.animais_sem_cadastro) || 0;
+      const total = cadastrados + semCad;
+      const cap = Number(f.capacidade) || 0;
+      const pct = cap > 0 ? Math.min(100, total / cap * 100) : null;
+      const maxM = Math.max(1, ...ms.map(m => porManga.get(m.id) || 0), semManga.get(f.id) || 0);
+      const sm = semManga.get(f.id) || 0;
+      const local = [f.municipio ? f.municipio + (f.estado ? '/' + f.estado : '') : '', f.atividade || ''].filter(Boolean).join(' · ');
+
+      const linhasMangas = ms.length === 0
+        ? '<div style="font-size:12px;color:var(--text-dim);padding-bottom:6px">Nenhuma manga cadastrada.</div>'
+        : ms.map(m => {
+            const q = porManga.get(m.id) || 0;
+            const capM = Number(m.capacidade) > 0 && Number(m.capacidade) < 9999 ? ` title="Capacidade: ${m.capacidade}"` : '';
+            return `<div class="mrow ${q ? '' : 'vazia'}"${capM}><span class="mn" title="${esc(m.numero)}">${esc(m.numero)}</span><div class="mb"><div style="width:${q / maxM * 100}%"></div></div><span class="mq">${q}</span></div>`;
+          }).join('') + (sm ? `<div class="mrow vazia"><span class="mn">Sem manga</span><div class="mb"><div style="width:${sm / maxM * 100}%"></div></div><span class="mq">${sm}</span></div>` : '');
+
+      return `<div class="fcard">
+        <div class="fcard-head">
+          <div class="fcard-nome">${esc(f.nome)}${f.confinamento ? ' <span class="badge bg-warning">Confinamento</span>' : ''}</div>
+          <div class="fcard-sub">${esc(local) || '&nbsp;'}</div>
+        </div>
+        <div class="fcard-stats">
+          <div class="fcard-stat"><div class="l">Capacidade</div><div class="v">${cap ? cap.toLocaleString('pt-BR') : '—'}</div></div>
+          <div class="fcard-stat"><div class="l">Mangas</div><div class="v">${ms.length}</div></div>
+          <div class="fcard-stat"><div class="l">Ocupação</div><div class="v">${pct !== null ? pct.toFixed(0) + '%' : '—'}</div></div>
+        </div>
+        ${pct !== null ? `<div class="fcard-ocup"><div class="barra"><div style="width:${pct}%"></div></div></div>` : ''}
+        <div class="fcard-mangas">
+          <div class="tit">Animais por manga</div>
+          ${linhasMangas}
+        </div>
+        <div class="fcard-total"><span>Total de animais${semCad ? ` <span style="font-size:11px;color:var(--text-dim)">(${cadastrados} + ${semCad} s/ cadastro)</span>` : ''}</span><b>${total.toLocaleString('pt-BR')}</b></div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    alvo.innerHTML = `<p style="color:var(--danger)">Erro ao carregar as fazendas: ${e.message || e}</p>`;
+  }
+}
+
 (async function init() {
   await checkAuth();
   showUserEmail();
+  carregarCartoes();
   carregarFazendas();
   carregarDashboardFazendas();
 })();

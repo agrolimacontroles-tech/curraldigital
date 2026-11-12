@@ -13,6 +13,7 @@ const MENU_ITEMS = [
   { page: 'animais',    label: 'Animais',    img: 'boi-icon.png' },
   { page: 'lotes',      label: 'Lotes',      icon: 'ti-stack-2' },
   { page: 'mangas',     label: 'Mangas',     icon: 'ti-fence' },
+  { page: 'consumo',    label: 'Consumo',    icon: 'ti-salt' },
   { page: 'compras',    label: 'Compras',    icon: 'ti-shopping-cart' },
   { page: 'vendas',     label: 'Vendas',     icon: 'ti-currency-dollar' },
   { page: 'indicadores', label: 'Indicadores', icon: 'ti-chart-line' },
