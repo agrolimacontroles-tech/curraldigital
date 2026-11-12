@@ -335,7 +335,18 @@ document.getElementById('mainContent').innerHTML = `
           <div class="fgroup"><label>Data do óbito *</label><input id="d_data_morte" type="date"></div>
         </div>
         <div class="frow cols-1">
-          <div class="fgroup"><label>Causa</label><input id="d_causa_morte" placeholder="Ex: pneumonia, acidente..."></div>
+          <div class="fgroup"><label>Causa</label>
+            <select id="d_causa_morte">
+              <option value="">Não informada</option>
+              <option>Doença</option>
+              <option>Acidente</option>
+              <option>Predador</option>
+              <option>Desconhecida</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow cols-1">
+          <div class="fgroup"><label>Detalhe (opcional)</label><input id="d_detalhe_morte" placeholder="Ex: perna quebrada, pneumonia..."></div>
         </div>
       </div>
       <div class="modal-foot">
@@ -1078,6 +1089,7 @@ function abrirModalMorte(animalId, brinco) {
   document.getElementById('modalMorteTitulo').textContent = `Registrar óbito — #${brinco}`;
   document.getElementById('d_data_morte').value = new Date().toISOString().slice(0, 10);
   document.getElementById('d_causa_morte').value = '';
+  document.getElementById('d_detalhe_morte').value = '';
   document.getElementById('msgMorte').className = 'msg';
   document.getElementById('modalMorte').style.display = 'flex';
 }
@@ -1091,11 +1103,19 @@ async function salvarMorte() {
   const btn = document.getElementById('btnSalvarMorte');
   btn.disabled = true;
 
-  const { error } = await supabaseClient.from('animais').update({
+  // A causa é uma categoria fixa (o banco só aceita estas); o detalhe livre vai para as observações.
+  const detalhe = document.getElementById('d_detalhe_morte').value.trim();
+  const upd = {
     status: 'morto',
     data_morte: dataMorte,
-    causa_morte: document.getElementById('d_causa_morte').value.trim() || null,
-  }).eq('id', acaoAnimalId);
+    causa_morte: document.getElementById('d_causa_morte').value || null,
+  };
+  if (detalhe) {
+    const { data: atual } = await supabaseClient.from('animais').select('observacoes').eq('id', acaoAnimalId).single();
+    const txt = `Óbito: ${detalhe}`;
+    upd.observacoes = atual && atual.observacoes ? `${atual.observacoes} | ${txt}` : txt;
+  }
+  const { error } = await supabaseClient.from('animais').update(upd).eq('id', acaoAnimalId);
 
   btn.disabled = false;
 
