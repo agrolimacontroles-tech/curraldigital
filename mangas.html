@@ -36,6 +36,10 @@ document.getElementById('mainContent').innerHTML = `
   </div>
 
   <div id="abaLista" style="display:none">
+    <div class="toolbar">
+      <select id="filtroFazendaLista" onchange="renderListaMangas()"><option value="">Todas as fazendas</option></select>
+      <span id="contagemFiltroLista" style="font-size:12px;color:var(--text-dim)"></span>
+    </div>
     <div class="card">
       <div class="cardb table-wrap">
         <table>
@@ -209,7 +213,37 @@ async function carregarMangas() {
     if (a.status === 'ativo' && a.manga_id) contagem[a.manga_id] = (contagem[a.manga_id] || 0) + 1;
   });
 
-  document.getElementById('tabelaMangas').innerHTML = mangas.map(m => `
+  LISTA_MANGAS = mangas;
+  LISTA_CONTAGEM = contagem;
+
+  // lista suspensa de fazendas (só as que têm manga), mantendo a escolha atual
+  const sel = document.getElementById('filtroFazendaLista');
+  const atual = sel.value;
+  const fazendas = new Map();
+  mangas.forEach(m => { if (m.fazenda_id) fazendas.set(m.fazenda_id, m.fazenda_nome || '—'); });
+  sel.innerHTML = '<option value="">Todas as fazendas</option>' +
+    [...fazendas.entries()].sort((x, y) => String(x[1]).localeCompare(String(y[1]), 'pt-BR'))
+      .map(([id, nome]) => `<option value="${id}">${nome}</option>`).join('');
+  if (atual && fazendas.has(atual)) sel.value = atual;
+
+  renderListaMangas();
+}
+
+let LISTA_MANGAS = [];
+let LISTA_CONTAGEM = {};
+
+function renderListaMangas() {
+  const fazendaId = document.getElementById('filtroFazendaLista').value;
+  const lista = fazendaId ? LISTA_MANGAS.filter(m => m.fazenda_id === fazendaId) : LISTA_MANGAS;
+  const contagem = LISTA_CONTAGEM;
+
+  document.getElementById('contagemFiltroLista').textContent = fazendaId
+    ? `${lista.length} manga${lista.length === 1 ? '' : 's'} · ${lista.reduce((t, m) => t + (contagem[m.id] || 0), 0)} animais ativos`
+    : '';
+
+  document.getElementById('tabelaMangas').innerHTML = lista.length === 0
+    ? '<tr class="empty-row"><td colspan="4">Nenhuma manga nessa fazenda.</td></tr>'
+    : lista.map(m => `
       <tr>
         <td><a href="javascript:void(0)" onclick="verAnimaisDaManga('${m.id}','${m.fazenda_id}','${m.numero}')" style="color:var(--text);font-weight:bold;text-decoration:underline;cursor:pointer" title="Ver animais dessa manga">Manga ${m.numero}</a></td>
         <td>${m.fazenda_nome || '—'}</td>
