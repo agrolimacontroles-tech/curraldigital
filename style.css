@@ -224,7 +224,12 @@ tr:hover td { background: var(--bg-hover); }
 }
 .fgroup textarea { resize: vertical; min-height: 70px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
-.toolbar select, .toolbar input { font-size: 12px; }
+.toolbar select, .toolbar input:not([type=checkbox]):not([type=radio]) {
+  font-size: 12px; font-family: inherit; background: var(--bg-input); color: var(--text);
+  border: 0.5px solid var(--border); border-radius: 7px; padding: 7px 10px;
+}
+.toolbar select:focus, .toolbar input:focus { outline: none; border-color: var(--accent-strong); }
+.toolbar select option { background: var(--bg-input); color: var(--text); }
 
 /* ---------- Mensagens ---------- */
 .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 1rem; display: none; }
